@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GangaEdge - Weather-Aware IoT Edge Command Center</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;700&family=Outfit:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- MQTT.js (for live ESP32 data via HiveMQ WebSocket) -->
+    <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="glow-overlay"></div>
+    
+    <!-- Main Command Center Grid -->
+    <div class="app-container">
+        
+        <!-- Header -->
+        <header class="app-header">
+            <div class="brand">
+                <div class="logo-box">
+                    <i class="fa-solid fa-server pulse-icon"></i>
+                </div>
+                <div>
+                    <h1 id="brand-name">GangaEdge</h1>
+                    <p class="subtitle" id="brand-subtitle">Weather-Aware IoT Edge Framework &bull; Water Quality Trust Scoring</p>
+                </div>
+            </div>
+            
+            <!-- Global Statuses -->
+            <div class="global-status-panel">
+                <div class="status-indicator">
+                    <span class="status-dot online"></span>
+                    <div class="status-lbl">
+                        <span class="lbl-top">EDGE NODE</span>
+                        <span class="lbl-bottom text-green">ONLINE (LOCAL)</span>
+                    </div>
+                </div>
+
+                <div class="status-indicator">
+                    <label class="switch-container">
+                        <input type="checkbox" id="cloud-toggle" checked>
+                        <span class="slider"></span>
+                    </label>
+                    <div class="status-lbl">
+                        <span class="lbl-top">CLOUD UPLINK</span>
+                        <span id="cloud-status-text" class="lbl-bottom text-green">CONNECTED</span>
+                    </div>
+                </div>
+
+                <div class="status-indicator">
+                    <span id="sync-icon" class="sync-state-dot idle"></span>
+                    <div class="status-lbl">
+                        <span class="lbl-top">SYNC STATUS</span>
+                        <span id="sync-status-text" class="lbl-bottom">IDLE</span>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Stat Bar -->
+        <section class="stat-bar">
+            <div class="stat-card">
+                <span class="stat-label">Buffered Telemetry</span>
+                <span id="stat-buffer" class="stat-value text-amber">0</span>
+                <span class="stat-desc">Awaiting upload on outage</span>
+            </div>
+            <div class="stat-card">
+                <span class="stat-label">Cloud DB Records</span>
+                <span id="stat-cloud-records" class="stat-value text-green">0</span>
+                <span class="stat-desc">Successfully synchronized</span>
+            </div>
+            <div class="stat-card">
+                <span class="stat-label">Edge Sync Rate</span>
+                <span id="stat-sync-rate" class="stat-value">5 Hz</span>
+                <span class="stat-desc">Draining speed when reconnected</span>
+            </div>
+            <div class="stat-card">
+                <span class="stat-label">Active Sensors</span>
+                <span class="stat-value">4 / 4</span>
+                <span class="stat-desc" id="stat-faults">0 currently degraded</span>
+            </div>
+        </section>
+
+        <!-- Main Workspace -->
+        <main class="dashboard-grid">
+            
+            <!-- Column Left: Simulation & Controllers -->
+            <div class="grid-col left-col">
+                
+                <!-- Weather Context Panel -->
+                <div class="dashboard-card weather-card">
+                    <div class="card-header">
+                        <h3><i class="fa-solid fa-cloud-sun-rain"></i> Live Weather Context (Roorkee)</h3>
+                        <span id="weather-badge" class="badge green">CLEAR</span>
+                    </div>
+                    <div class="weather-content">
+                        <div class="weather-main">
+                            <span id="weather-icon" class="weather-main-icon">☀️</span>
+                            <div class="weather-temp-container">
+                                <span id="weather-temp" class="weather-temp-val">--</span>
+                                <span class="weather-temp-unit">°C</span>
+                            </div>
+                        </div>
+                        <div class="weather-details">
+                            <div class="weather-detail-item">
+                                <span class="lbl-top">Precipitation</span>
+                                <span id="weather-precipitation" class="weather-detail-val">-- mm</span>
+                            </div>
+                            <div class="weather-detail-item">
+                                <span class="lbl-top">Rain Rate</span>
+                                <span id="weather-rain" class="weather-detail-val">-- mm</span>
+                            </div>
+                            <div class="weather-detail-item">
+                                <span class="lbl-top">Wind Speed</span>
+                                <span id="weather-wind" class="weather-detail-val">-- km/h</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Topology Schematic -->
+                <div class="dashboard-card topology-card">
+                    <div class="card-header">
+                        <h3><i class="fa-solid fa-network-wired"></i> Architecture Topology & Data Flows</h3>
+                        <span class="badge">Simulated Real-time Dataflow</span>
+                    </div>
+                    <div class="topology-container">
+                        <!-- SVG Drawing Data Packet Flows -->
+                        <div class="topology-node" id="node-sensors">
+                            <i class="fa-solid fa-microchip node-icon"></i>
+                            <span class="node-title">Sensor Array</span>
+                            <span class="node-meta">Raw Streams</span>
+                        </div>
+                        
+                        <div class="topology-flow-line" id="flow-sensor-to-edge">
+                            <div class="flow-track"></div>
+                            <div class="flow-particles" id="particles-edge"></div>
+                        </div>
+                        
+                        <div class="topology-node" id="node-edge">
+                            <i class="fa-solid fa-shield-halved node-icon"></i>
+                            <span class="node-title" id="edge-node-title">GangaEdge Server</span>
+                            <span class="node-meta">AI Trust &amp; Water Quality Decisions</span>
+                        </div>
+                        
+                        <div class="topology-flow-line" id="flow-edge-to-cloud">
+                            <div class="flow-track"></div>
+                            <div class="flow-particles" id="particles-cloud"></div>
+                        </div>
+                        
+                        <div class="topology-node disconnected" id="node-cloud">
+                            <i class="fa-solid fa-cloud node-icon"></i>
+                            <span class="node-title">Central Cloud</span>
+                            <span class="node-meta" id="cloud-meta-text">Sync Target</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Sensor Array Controls -->
+                <div class="dashboard-card sensor-grid-card">
+                    <div class="card-header">
+                        <h3><i class="fa-solid fa-gauge-high"></i> Sensor Array & Fault Injection</h3>
+                        <span class="helper-txt">Inject anomalies to test trust calculations</span>
+                    </div>
+                    
+                    <div class="sensor-grid" id="sensor-container">
+                        <!-- Sensors dynamically generated in app.js -->
+                    </div>
+                </div>
+                
+            </div>
+            
+            <!-- Column Right: Analytics & Logs -->
+            <div class="grid-col right-col">
+                
+                <!-- Real-time AI Trust Scoring Charts -->
+                <div class="dashboard-card chart-card">
+                    <div class="card-header">
+                        <h3><i class="fa-solid fa-chart-line"></i> AI Sensor Trust Scoring Engine</h3>
+                        <div class="chart-legend">
+                            <span class="legend-item"><span class="legend-color legend-s1"></span>TDS (ppm)</span>
+                            <span class="legend-item"><span class="legend-color legend-s2"></span>pH</span>
+                            <span class="legend-item"><span class="legend-color legend-s3"></span>Temp (°C)</span>
+                            <span class="legend-item"><span class="legend-color legend-s4"></span>Turbidity (NTU)</span>
+                        </div>
+                    </div>
+                    <div class="chart-container">
+                        <canvas id="trustChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Dual-Node Pollution Flow Analysis -->
+                <div class="dashboard-card dual-node-card">
+                    <div class="card-header">
+                        <h3><i class="fa-solid fa-arrows-spin"></i> Dual-Node Pollution Flow Analysis</h3>
+                        <span class="badge" id="overall-trend-badge">STABLE</span>
+                    </div>
+                    <div class="dual-node-container">
+                        <!-- Flow Diagram Node A -> Node B -->
+                        <div class="flow-diagram">
+                            <div class="flow-node">
+                                <span class="node-label">Node A (Upstream)</span>
+                                <span id="node-a-status" class="node-status text-green">ONLINE</span>
+                            </div>
+                            <div class="flow-arrow">
+                                <i class="fa-solid fa-circle-arrow-right flow-arrow-icon"></i>
+                                <span id="transit-time-display" class="transit-label">Transit: 15s</span>
+                            </div>
+                            <div class="flow-node">
+                                <span class="node-label">Node B (Downstream)</span>
+                                <span id="node-b-status" class="node-status text-green">ONLINE</span>
+                            </div>
+                        </div>
+
+                        <!-- Per-sensor comparisons and deltas -->
+                        <div class="comparison-list">
+                            <div class="comparison-item" data-sensor="tds">
+                                <div class="comp-meta">
+                                    <span class="comp-name">TDS (Total Dissolved Solids)</span>
+                                    <span id="tds-delta" class="comp-delta text-green">0 ppm (stable)</span>
+                                </div>
+                                <div class="comp-bars-container">
+                                    <div class="comp-bar-row">
+                                        <span class="bar-lbl">Node A:</span>
+                                        <div class="progress-bar-bg"><div id="tds-bar-a" class="progress-bar" style="width: 50%;"></div></div>
+                                        <span id="tds-val-a" class="bar-val">--</span>
+                                    </div>
+                                    <div class="comp-bar-row">
+                                        <span class="bar-lbl">Node B:</span>
+                                        <div class="progress-bar-bg"><div id="tds-bar-b" class="progress-bar" style="width: 50%;"></div></div>
+                                        <span id="tds-val-b" class="bar-val">--</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="comparison-item" data-sensor="ph">
+                                <div class="comp-meta">
+                                    <span class="comp-name">pH (Acidity/Alkalinity)</span>
+                                    <span id="ph-delta" class="comp-delta text-green">0.0 (stable)</span>
+                                </div>
+                                <div class="comp-bars-container">
+                                    <div class="comp-bar-row">
+                                        <span class="bar-lbl">Node A:</span>
+                                        <div class="progress-bar-bg"><div id="ph-bar-a" class="progress-bar" style="width: 50%;"></div></div>
+                                        <span id="ph-val-a" class="bar-val">--</span>
+                                    </div>
+                                    <div class="comp-bar-row">
+                                        <span class="bar-lbl">Node B:</span>
+                                        <div class="progress-bar-bg"><div id="ph-bar-b" class="progress-bar" style="width: 50%;"></div></div>
+                                        <span id="ph-val-b" class="bar-val">--</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="comparison-item" data-sensor="temp">
+                                <div class="comp-meta">
+                                    <span class="comp-name">Temperature</span>
+                                    <span id="temp-delta" class="comp-delta text-green">0.0°C (stable)</span>
+                                </div>
+                                <div class="comp-bars-container">
+                                    <div class="comp-bar-row">
+                                        <span class="bar-lbl">Node A:</span>
+                                        <div class="progress-bar-bg"><div id="temp-bar-a" class="progress-bar" style="width: 50%;"></div></div>
+                                        <span id="temp-val-a" class="bar-val">--</span>
+                                    </div>
+                                    <div class="comp-bar-row">
+                                        <span class="bar-lbl">Node B:</span>
+                                        <div class="progress-bar-bg"><div id="temp-bar-b" class="progress-bar" style="width: 50%;"></div></div>
+                                        <span id="temp-val-b" class="bar-val">--</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="comparison-item" data-sensor="turb">
+                                <div class="comp-meta">
+                                    <span class="comp-name">Turbidity</span>
+                                    <span id="turb-delta" class="comp-delta text-green">0.0 NTU (stable)</span>
+                                </div>
+                                <div class="comp-bars-container">
+                                    <div class="comp-bar-row">
+                                        <span class="bar-lbl">Node A:</span>
+                                        <div class="progress-bar-bg"><div id="turb-bar-a" class="progress-bar" style="width: 50%;"></div></div>
+                                        <span id="turb-val-a" class="bar-val">--</span>
+                                    </div>
+                                    <div class="comp-bar-row">
+                                        <span class="bar-lbl">Node B:</span>
+                                        <div class="progress-bar-bg"><div id="turb-bar-b" class="progress-bar" style="width: 50%;"></div></div>
+                                        <span id="turb-val-b" class="bar-val">--</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Local Edge Action Log (The Decision Engine) -->
+                <div class="dashboard-card terminal-card">
+                    <div class="card-header">
+                        <h3><i class="fa-solid fa-terminal"></i> Local Edge Decision Engine Log</h3>
+                        <button id="clear-terminal" class="btn-text"><i class="fa-solid fa-trash-can"></i> Clear</button>
+                    </div>
+                    <div class="terminal-body" id="edge-terminal">
+                        <!-- Initialized dynamically in app.js -->
+                    </div>
+                </div>
+
+                <!-- Database Synchronizer Split -->
+                <div class="dashboard-card database-card">
+                    <div class="card-header">
+                        <h3><i class="fa-solid fa-database"></i> Distributed Database State Viewer</h3>
+                    </div>
+                    <div class="db-split-container">
+                        <!-- Edge Local Buffer Table -->
+                        <div class="db-panel">
+                            <div class="db-panel-header">
+                                <span class="db-title"><i class="fa-solid fa-hdd"></i> Local Outage Queue (Edge Buffer)</span>
+                                <span id="queue-size-badge" class="badge">0 items</span>
+                            </div>
+                            <div class="table-wrapper">
+                                <table id="edge-queue-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Timestamp</th>
+                                            <th>Sensor</th>
+                                            <th>Ftd Val</th>
+                                            <th>Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="edge-queue-body">
+                                        <tr>
+                                            <td colspan="4" class="empty-placeholder">Queue empty. Edge transmitting directly to Cloud.</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <!-- Cloud DB Table -->
+                        <div class="db-panel">
+                            <div class="db-panel-header">
+                                <span class="db-title text-green"><i class="fa-solid fa-cloud-arrow-up"></i> Central Cloud Database</span>
+                                <span id="cloud-size-badge" class="badge green">0 entries</span>
+                            </div>
+                            <div class="table-wrapper">
+                                <table id="cloud-db-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Timestamp</th>
+                                            <th>Sensor</th>
+                                            <th>Ftd Val</th>
+                                            <th>Trust</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="cloud-db-body">
+                                        <tr>
+                                            <td colspan="4" class="empty-placeholder">No cloud telemetry logged yet.</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+            
+        </main>
+        
+        <!-- Footer -->
+        <footer class="app-footer">
+            <p id="footer-text">GangaEdge Framework Proof-of-Concept &bull; Developed by Dyutishmaan Das &bull; IIT Roorkee Summer Internship Project Proposal</p>
+            <div class="footer-links">
+                <span><i class="fa-solid fa-circle-info"></i> Running offline buffer mode locally using LocalStorage fallback if needed.</span>
+            </div>
+        </footer>
+        
+    </div>
+    
+    <script src="app.js"></script>
+</body>
+</html>
