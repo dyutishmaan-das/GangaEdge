@@ -20,7 +20,7 @@ const MQTT_CONFIG = {
     brokerUrl: 'wss://c27fa0e9f196413ea7ea84e3cb6b1a3d.s1.eu.hivemq.cloud:8884/mqtt',
     username: 'Ganga_Node_A',
     password: 'Luci@2112@#',
-    topic: 'ganga-edge/sensors',
+    topic: 'ganga-edge/+/sensors',
     clientId: 'gangaedge-dashboard-' + Math.random().toString(16).substr(2, 8)
 };
 
@@ -36,6 +36,10 @@ let cloudDb = [];
 let sensors = [];
 let trustChartInstance = null;
 let mqttClient = null;  // Live MQTT client instance
+
+let lastSeenNodeA = 0;
+let lastSeenNodeB = 0;
+let nodeCheckInterval = null;
 
 // --- SENSOR CONFIGURATION ---
 // Calibrated to actual ESP32-WROOM-32E prototype hardware sensors
@@ -453,6 +457,13 @@ class DualNodeAnalyzer {
         if (this.bufferA.tds.length >= TRANSIT_TICKS) this.ready = true;
     }
 
+    /** Feed current Node B tick data (object with id → raw value) */
+    updateNodeB(tickData) {
+        tickData.forEach(d => {
+            this.lastB[d.id] = d.raw;
+        });
+    }
+
     /** Simulate Node B reading: Node A baseline-shifted + independent noise */
     simulateNodeB(tickData) {
         tickData.forEach(d => {
@@ -504,9 +515,11 @@ class DualNodeAnalyzer {
     }
 
     /** Render all dual-node DOM elements */
-    render(tickData) {
-        this.updateNodeA(tickData);
-        this.simulateNodeB(tickData);
+    render(tickData, isLiveNodeB = false) {
+        if (!isLiveNodeB) {
+            this.updateNodeA(tickData);
+            this.simulateNodeB(tickData);
+        }
         const deltas = this.computeDeltas();
         const pollIdx = this.computePollutionIndex(deltas);
 
@@ -534,17 +547,17 @@ class DualNodeAnalyzer {
             turb: { unit: 'NTU',  fixed: 1 }
         };
 
-        tickData.forEach(d => {
-            const id = d.id;
+        ['tds', 'ph', 'temp', 'turb'].forEach(id => {
             const meta = sensorMeta[id];
             if (!meta) return;
 
-            const valA = d.raw;
+            const bufA = this.bufferA[id];
+            const valA = bufA.length > 0 ? bufA[bufA.length - 1] : null;
             const valB = this.lastB[id];
             const delta = deltas[id];
             const range = SENSOR_DISPLAY_RANGES[id];
 
-            if (valB === null) return;
+            if (valA === null || valB === null) return;
 
             // Progress bar widths (clamped 2–98%)
             const pctA = Math.min(98, Math.max(2, ((valA - range.min) / (range.max - range.min)) * 100));
@@ -614,7 +627,8 @@ function connectLiveMQTT() {
     mqttClient.on('message', (topic, message) => {
         try {
             const payload = JSON.parse(message.toString());
-            handleLivePacket(payload);
+            const isNodeB = topic.includes('node-b') || (payload.device && payload.device.includes('node-B'));
+            handleLivePacket(payload, isNodeB);
         } catch (e) {
             appendTerminal(`[MQTT] Parse error: ${e.message}`, 'error');
         }
@@ -631,12 +645,61 @@ function connectLiveMQTT() {
     mqttClient.on('offline', () => {
         appendTerminal(`[MQTT] Broker connection lost. Buffering locally.`, 'warn');
     });
+    
+    if(!nodeCheckInterval) {
+        nodeCheckInterval = setInterval(checkNodeStatus, 2000);
+    }
+}
+
+function checkNodeStatus() {
+    const now = Date.now();
+    
+    // Node A check (8 seconds timeout)
+    const nodeA_dot = document.getElementById('node-a-status-dot');
+    const nodeA_text = document.getElementById('node-a-status-text');
+    if (now - lastSeenNodeA > 8000) {
+        if(nodeA_dot) {
+            nodeA_dot.className = 'status-dot offline';
+            nodeA_text.textContent = 'OFFLINE';
+            nodeA_text.className = 'lbl-bottom text-red';
+        }
+    }
+    
+    // Node B check (8 seconds timeout)
+    const nodeB_dot = document.getElementById('node-b-status-dot');
+    const nodeB_text = document.getElementById('node-b-status-text');
+    if (now - lastSeenNodeB > 8000) {
+        if(nodeB_dot) {
+            nodeB_dot.className = 'status-dot offline';
+            nodeB_text.textContent = 'OFFLINE';
+            nodeB_text.className = 'lbl-bottom text-red';
+        }
+    }
 }
 
 // --- HANDLE LIVE ESP32 PACKET ---
-function handleLivePacket(data) {
-    systemTick++;
+function handleLivePacket(data, isNodeB = false) {
     let activeFaultsCount = 0;
+    
+    if(isNodeB) {
+        lastSeenNodeB = Date.now();
+        const dot = document.getElementById('node-b-status-dot');
+        const text = document.getElementById('node-b-status-text');
+        if(dot && dot.classList.contains('offline')) {
+            dot.className = 'status-dot online';
+            text.textContent = 'ONLINE';
+            text.className = 'lbl-bottom text-green';
+        }
+    } else {
+        lastSeenNodeA = Date.now();
+        const dot = document.getElementById('node-a-status-dot');
+        const text = document.getElementById('node-a-status-text');
+        if(dot && dot.classList.contains('offline')) {
+            dot.className = 'status-dot online';
+            text.textContent = 'ONLINE';
+            text.className = 'lbl-bottom text-green';
+        }
+    }
 
     // Map ESP32 JSON fields to the dashboard's sensor rendering format
     const sensorMap = [
@@ -667,25 +730,64 @@ function handleLivePacket(data) {
             status: status,
             unit: sensor.config.unit
         });
+    });
 
-        if (status !== 'trusted') activeFaultsCount++;
+    if (isNodeB) {
+        // Update Node B status on the UI
+        const statusEl = document.getElementById('node-b-status');
+        if (statusEl) {
+            statusEl.textContent = 'ONLINE';
+            statusEl.className = 'node-status text-green';
+        }
+        
+        // Feed to DualNodeAnalyzer
+        dualNodeAnalyzer.updateNodeB(tickData);
+        
+        // Render comparison with live Node B flag set to true
+        dualNodeAnalyzer.render(tickData, true);
+        
+        if (systemTick % 6 === 0) {
+            appendTerminal(`[MQTT] Live data received from Node B`, 'info');
+        }
+        return; // Don't update main dashboard cards/charts/cloudDb with Node B data!
+    }
 
+    // Node A logic (primary dashboard display)
+    systemTick++;
+    const statusElA = document.getElementById('node-a-status');
+    if (statusElA) {
+        statusElA.textContent = 'ONLINE';
+        statusElA.className = 'node-status text-green';
+    }
+
+    tickData.forEach((td, idx) => {
+        const sensor = sensors[idx];
+        if (td.status !== 'trusted') activeFaultsCount++;
         // Update DOM elements for sensor cards (reuse existing rendering)
-        updateSensorDOM(sensor, raw, filtered, trust, status);
+        updateSensorDOM(sensor, td.raw, td.filtered, td.trust, td.status);
     });
 
     // Update active fault statistics
     document.getElementById('stat-faults').innerText = `${activeFaultsCount} currently degraded/suspect`;
+    const activeSensorsEl = document.getElementById('stat-active-sensors');
+    if (activeSensorsEl) {
+        activeSensorsEl.innerText = `${4 - activeFaultsCount} / 4`;
+        if (activeFaultsCount > 0) {
+            activeSensorsEl.className = "stat-value text-red";
+        } else {
+            activeSensorsEl.className = "stat-value";
+        }
+    }
 
     // ML Anomaly terminal logging
     if (data.mlAnomaly) {
         const conf = data.mlConfidence || {};
         appendTerminal(
-            `[TinyML] ⚠ ANOMALY → Cause: ${data.mlCause} | Conf: TDS:${conf.tds||0}% pH:${conf.ph||0}% Temp:${conf.temp||0}% Turb:${conf.turb||0}%`,
+            `[TinyML Node A] ⚠ ANOMALY → Cause: ${data.mlCause} | Conf: TDS:${conf.tds||0}% pH:${conf.ph||0}% Temp:${conf.temp||0}% Turb:${conf.turb||0}%`,
             'error'
         );
     } else if (systemTick % 3 === 0) {
-        appendTerminal(`[ESP32 LIVE] All parameters within learned baseline. Device: ${data.device || 'node-A'}`, 'info');
+        appendTerminal(`[ESP32 LIVE Node A] All parameters within learned baseline. Device: ${data.device || 'node-A'}`, 'info');
     }
 
     // Cloud DB record
@@ -713,7 +815,8 @@ function handleLivePacket(data) {
     updateChart(tickData);
 
     // Dual-node pollution flow analysis
-    dualNodeAnalyzer.render(tickData);
+    dualNodeAnalyzer.updateNodeA(tickData);
+    dualNodeAnalyzer.render(tickData, true);
 }
 
 // --- INITIALIZATION ---
@@ -733,7 +836,7 @@ function init() {
     appendTerminal(`[SYSTEM INIT] AI Trust Scoring loaded — Z-Score, Delta-Rate, Stuck-Value, Bound-Check thresholds calibrated.`, 'system');
     appendTerminal(`[SYSTEM INIT] WHO & FAO water quality reference ranges registered. Local fallback values ready.`, 'system');
     appendTerminal(`[WEATHER INIT] Weather-Aware monitoring enabled for Roorkee Canal (Lat 29.8543, Lon 77.8880).`, 'system');
-    appendTerminal(`[DUAL-NODE INIT] Node A (Upstream) + Node B (Downstream) pollution flow analysis ACTIVE. Transit window: ${TRANSIT_TICKS}s.`, 'system');
+    appendTerminal(`[DUAL-NODE INIT] Node A + Node B pollution flow analysis ACTIVE. Transit window: ${TRANSIT_TICKS}s.`, 'system');
 
     // Generate Sensor instances (needed for config references in both modes)
     SENSOR_CONFIGS.forEach(cfg => {
@@ -757,10 +860,9 @@ function init() {
     } else {
         // ── SIMULATOR MODE: Use built-in sensor simulators for demo ──
         appendTerminal(`[MODE] Simulator mode — generating synthetic sensor data.`, 'system');
-        setInterval(systemTickLoop, 1000);
+        setInterval(systemTickLoop, 15000); // 15 seconds (4/min)
     }
 }
-
 // --- MAIN LOOP ---
 function systemTickLoop() {
     systemTick++;
@@ -800,6 +902,15 @@ function systemTickLoop() {
 
     // Update active fault statistics
     document.getElementById('stat-faults').innerText = `${activeFaultsCount} currently degraded/suspect`;
+    const activeSensorsEl = document.getElementById('stat-active-sensors');
+    if (activeSensorsEl) {
+        activeSensorsEl.innerText = `${4 - activeFaultsCount} / 4`;
+        if (activeFaultsCount > 0) {
+            activeSensorsEl.className = "stat-value text-red";
+        } else {
+            activeSensorsEl.className = "stat-value";
+        }
+    }
 
     // 2. Queue or sync data based on connectivity status
     const packetTime = new Date().toLocaleTimeString();
@@ -858,6 +969,23 @@ function systemTickLoop() {
 
 // --- EVENT HANDLERS ---
 function setupEventListeners() {
+    // Navigation Routing (SPA Logic)
+    const navItems = document.querySelectorAll('.nav-item');
+    const pageViews = document.querySelectorAll('.page-view');
+    navItems.forEach(item => {
+        item.addEventListener('click', () => {
+            // Remove active from all nav items and pages
+            navItems.forEach(nav => nav.classList.remove('active'));
+            pageViews.forEach(page => page.classList.remove('active'));
+            
+            // Add active to clicked nav and corresponding page
+            item.classList.add('active');
+            const targetId = 'view-' + item.getAttribute('data-section');
+            const targetView = document.getElementById(targetId);
+            if(targetView) targetView.classList.add('active');
+        });
+    });
+
     // Cloud Outage Toggle Switch
     const cloudToggle = document.getElementById('cloud-toggle');
     const cloudStatusText = document.getElementById('cloud-status-text');
@@ -1069,8 +1197,13 @@ function updateSensorDOM(sensor, raw, filtered, trust, status) {
         cardEl.className = `sensor-card ${status}`;
     }
     
-    badgeEl.innerText = status === 'degraded' ? 'Degraded/Faulty' : status;
-    badgeEl.className = `sensor-badge ${status}`;
+    if (trust === 0) {
+        badgeEl.innerText = 'OFFLINE / FAULT';
+        badgeEl.className = 'sensor-badge degraded';
+    } else {
+        badgeEl.innerText = status === 'degraded' ? 'Degraded/Faulty' : status;
+        badgeEl.className = `sensor-badge ${status}`;
+    }
 
     // Color gradient shifts on trust score
     if (trust >= 80) {
@@ -1118,6 +1251,11 @@ function appendTerminal(msg, type) {
 
     line.innerHTML = `[${time}] ${styledMsg}`;
     term.appendChild(line);
+    
+    // Cap at 50 lines to prevent infinite stretch
+    if (term.childElementCount > 50) {
+        term.removeChild(term.firstChild);
+    }
     
     // Auto-scroll to bottom
     term.scrollTop = term.scrollHeight;

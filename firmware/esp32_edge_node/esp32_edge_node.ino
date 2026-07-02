@@ -31,20 +31,34 @@
 #include "OneClassSVM.h"
 
 // ─────────────────────────────────────────────────────────────────────────────
+//  NODE CONFIGURATION
+// ─────────────────────────────────────────────────────────────────────────────
+//#define NODE_A  // Comment out this line to compile for Node B (Downstream)
+
+// ─────────────────────────────────────────────────────────────────────────────
 //  USER CONFIGURATION  ←  Edit these before flashing
 // ─────────────────────────────────────────────────────────────────────────────
-const char* WIFI_SSID       = "DYUTISH 2680";          // ← your WiFi name
-const char* WIFI_PASS       = "08642@qwerty";      // ← your WiFi password
+const char* WIFI_SSID       = "esp";          // ← your WiFi name
+const char* WIFI_PASS       = "Luci@13579";      // ← your WiFi password
 
 // Free public HiveMQ broker — no signup needed for testing
 // Replace with your own Mosquitto/EMQX broker IP for production
 const char* MQTT_BROKER     = "c27fa0e9f196413ea7ea84e3cb6b1a3d.s1.eu.hivemq.cloud";
 const int   MQTT_PORT       = 8883;
+
+#ifdef NODE_A
 const char* MQTT_CLIENT_ID  = "ganga-edge-node-A"; // must be unique on broker
-const char* MQTT_TOPIC_DATA = "ganga-edge/sensors";    // live telemetry
-const char* MQTT_TOPIC_STAT = "ganga-edge/status";     // device heartbeat
+const char* MQTT_TOPIC_DATA = "ganga-edge/node-a/sensors";    // live telemetry
+const char* MQTT_TOPIC_STAT = "ganga-edge/node-a/status";     // device heartbeat
 const char* MQTT_USER       = "Ganga_Node_A";
 const char* MQTT_PASS       = "Luci@2112@#";
+#else
+const char* MQTT_CLIENT_ID  = "ganga-edge-node-B"; // must be unique on broker
+const char* MQTT_TOPIC_DATA = "ganga-edge/node-b/sensors";    // live telemetry
+const char* MQTT_TOPIC_STAT = "ganga-edge/node-b/status";     // device heartbeat
+const char* MQTT_USER       = "Ganga_Node_B";
+const char* MQTT_PASS       = "Luci@2112@#";
+#endif
 // DUAL-NODE ARCHITECTURE:
 // Node A (upstream): publishes to 'ganga-edge/node-a/sensors'
 // Node B (downstream): publishes to 'ganga-edge/node-b/sensors'
@@ -55,11 +69,11 @@ const char* G_SHEETS_WEBHOOK = "https://script.google.com/macros/s/AKfycbzD4xEIK
 // ─────────────────────────────────────────────────────────────────────────────
 //  PIN DEFINITIONS  (from your existing prototype)
 // ─────────────────────────────────────────────────────────────────────────────
-#define TDS_PIN        39
-#define PH_PIN         34
-#define TURB_OUT_PIN   35
-#define TURB_PWM_PIN   18
-#define TEMP_PIN       26
+#define TDS_PIN        34
+#define PH_PIN         35
+#define TURB_OUT_PIN   33
+#define TURB_PWM_PIN   27
+#define TEMP_PIN       32
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  TRUST SCORING CONFIGURATION
@@ -365,7 +379,7 @@ const int   SAMPLING_COUNT        = 100;
 float       zeroVoltage           = 3.8f;
 
 unsigned long lastReadingMs = 0;
-const unsigned long READ_INTERVAL_MS = 2000;   // sensor read every 2s
+const unsigned long READ_INTERVAL_MS = 15000;   // sensor read every 15s (4/min)
 bool cloudOnline = false;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -444,7 +458,8 @@ bool connectMQTT() {
   if (mqtt.connect(MQTT_CLIENT_ID, MQTT_USER, MQTT_PASS)) {
     Serial.println(" OK");
     // Publish a status heartbeat on connect
-    mqtt.publish(MQTT_TOPIC_STAT, "{\"status\":\"online\",\"device\":\"esp32-wq-edge\"}");
+    String statusPayload = "{\"status\":\"online\",\"device\":\"" + String(MQTT_CLIENT_ID) + "\"}";
+    mqtt.publish(MQTT_TOPIC_STAT, statusPayload.c_str());
     return true;
   }
   Serial.printf(" FAILED (rc=%d)\n", mqtt.state());
