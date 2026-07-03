@@ -1,4 +1,16 @@
-:root {
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GangaEdge Dual Theme Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
             --page: #edf0ef;
             --app: #f8faf9;
             --surface: #ffffff;
@@ -1097,42 +1109,401 @@
                 justify-self: center;
             }
         }
+    </style>
+</head>
+<body>
+    <div class="stage">
+        <div class="browser-shell" aria-hidden="true">
+            <div class="browser-bar">
+                <div class="traffic"><span></span><span></span><span></span></div>
+                <div class="address">gangaedge.local</div>
+                <div class="window-actions">
+                    <i class="fa-regular fa-circle"></i>
+                    <i class="fa-solid fa-plus"></i>
+                    <i class="fa-solid fa-bars"></i>
+                </div>
+            </div>
+        </div>
 
-/* --- ADDED FOR GANGAEDGE LOGIC --- */
-.page-view { display: none; }
-.page-view.active { display: block; }
-.dashboard-grid.page-view.active { display: grid; }
+        <div class="app">
+            <aside class="sidebar">
+                <div class="brand">
+                    <div class="brand-mark"><i class="fa-solid fa-water"></i></div>
+                    <div>
+                        <strong>GangaEdge</strong>
+                        <span>Water quality assets</span>
+                    </div>
+                </div>
 
-/* Terminal */
-.terminal-box { 
-    grid-column: 1 / -1; 
-    min-height: 600px;
-    background: #000;
-    border: 1px solid var(--border);
-    border-radius: var(--card-radius);
-    display: flex;
-    flex-direction: column;
-}
-.terminal-header {
-    padding: 12px 16px;
-    border-bottom: 1px solid var(--border);
-    color: var(--muted);
-    font-size: 0.8rem;
-    font-weight: 600;
-    display: flex;
-    justify-content: space-between;
-}
-.terminal-body { 
-    background: #0f172a; 
-    flex:1; 
-    padding: 16px; 
-    font-family: monospace; 
-    font-size: 0.85rem; 
-    overflow-y: auto; 
-    color: #34d399; 
-    border-radius: 0 0 var(--card-radius) var(--card-radius);
-}
-.system-line { color: #818cf8; } 
-.warn-line { color: #fbbf24; } 
-.error-line { color: #f87171; }
-.terminal-line { margin-bottom: 4px; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 4px; word-wrap: break-word;}
+                <div>
+                    <p class="nav-title">Menu</p>
+                    <nav class="nav" aria-label="Dashboard navigation">
+                        <button class="active"><i class="fa-solid fa-grip"></i><span>Dashboard</span></button>
+                        <button><i class="fa-solid fa-microchip"></i><span>Sensors</span><span class="tiny-badge">4</span></button>
+                        <button><i class="fa-regular fa-calendar"></i><span>Calendar</span></button>
+                        <button><i class="fa-solid fa-chart-simple"></i><span>Analytics</span></button>
+                        <button><i class="fa-solid fa-users"></i><span>Team</span></button>
+                    </nav>
+                </div>
+
+                <div>
+                    <p class="nav-title">General</p>
+                    <nav class="nav" aria-label="General navigation">
+                        <button><i class="fa-solid fa-gear"></i><span>Settings</span></button>
+                        <button><i class="fa-regular fa-circle-question"></i><span>Help</span></button>
+                        <button><i class="fa-solid fa-arrow-right-from-bracket"></i><span>Logout</span></button>
+                    </nav>
+                </div>
+
+                <div class="download-card">
+                    <i class="fa-solid fa-bolt"></i>
+                    <strong>Activate Edge Sync</strong>
+                    <span>Unlock autonomous buffering, recovery, and cloud drain mode.</span>
+                    <button>Run Sync Check</button>
+                </div>
+            </aside>
+
+            <main class="main">
+                <header class="topbar">
+                    <label class="search">
+                        <i class="fa-solid fa-magnifying-glass"></i>
+                        <input type="search" placeholder="Search telemetry">
+                    </label>
+                    <div class="top-actions">
+                        <button class="icon-btn" aria-label="Messages"><i class="fa-regular fa-envelope"></i></button>
+                        <button class="icon-btn" aria-label="Notifications"><i class="fa-regular fa-bell"></i></button>
+                        <button class="theme-toggle" id="themeToggle" aria-label="Toggle theme"><i class="fa-solid fa-moon"></i></button>
+                        <div class="user">
+                            <div class="avatar">DD</div>
+                            <div>
+                                <strong>Dyutishmaan Das</strong>
+                                <span>GangaEdge dashboard</span>
+                            </div>
+                        </div>
+                    </div>
+                </header>
+
+                <section class="hero-row">
+                    <div class="heading">
+                        <h1>Dashboard</h1>
+                        <p>Plan, prioritize, and monitor Ganga canal water quality with resilient edge intelligence.</p>
+                    </div>
+                    <div class="primary-actions">
+                        <button class="btn primary"><i class="fa-solid fa-plus"></i> Add Node</button>
+                        <button class="btn"><i class="fa-solid fa-file-import"></i> Import Data</button>
+                    </div>
+                </section>
+
+                <section class="dashboard-grid">
+                    <div class="stat-grid">
+                        <article class="stat-card featured">
+                            <div class="stat-top"><span>Active Sensors</span><span class="arrow"><i class="fa-solid fa-arrow-up-right"></i></span></div>
+                            <div class="stat-value">4</div>
+                            <div class="stat-note"><i class="fa-solid fa-chart-line"></i> All streams online</div>
+                        </article>
+                        <article class="stat-card">
+                            <div class="stat-top"><span>Buffered Records</span><span class="arrow"><i class="fa-solid fa-arrow-up-right"></i></span></div>
+                            <div class="stat-value" id="bufferCount">12</div>
+                            <div class="stat-note"><i class="fa-solid fa-arrow-trend-up"></i> Outage ready</div>
+                        </article>
+                        <article class="stat-card">
+                            <div class="stat-top"><span>Cloud Records</span><span class="arrow"><i class="fa-solid fa-arrow-up-right"></i></span></div>
+                            <div class="stat-value" id="cloudCount">1.2k</div>
+                            <div class="stat-note"><i class="fa-solid fa-cloud-arrow-up"></i> MQTT connected</div>
+                        </article>
+                        <article class="stat-card">
+                            <div class="stat-top"><span>Risk State</span><span class="arrow"><i class="fa-solid fa-arrow-up-right"></i></span></div>
+                            <div class="stat-value">Low</div>
+                            <div class="stat-note"><i class="fa-solid fa-shield-halved"></i> No unsafe band</div>
+                        </article>
+                    </div>
+
+                    <article class="card chart-card">
+                        <div class="section-title">
+                            <div>
+                                <h2>Trust Score Analytics</h2>
+                                <span class="subtle">Weather-aware sensor confidence over time</span>
+                            </div>
+                            <button class="btn"><i class="fa-solid fa-clock"></i> 24H</button>
+                        </div>
+                        <div class="chart-wrap"><canvas id="trustChart"></canvas></div>
+                        <div class="sensor-row">
+                            <div class="sensor-mini">
+                                <span>TDS</span>
+                                <strong id="tdsReading">326 ppm</strong>
+                                <div class="trust-track"><div class="trust-fill" id="tdsTrust"></div></div>
+                            </div>
+                            <div class="sensor-mini">
+                                <span>pH</span>
+                                <strong id="phReading">7.14</strong>
+                                <div class="trust-track"><div class="trust-fill" id="phTrust"></div></div>
+                            </div>
+                            <div class="sensor-mini">
+                                <span>Temperature</span>
+                                <strong id="tempReading">26.8 C</strong>
+                                <div class="trust-track"><div class="trust-fill" id="tempTrust"></div></div>
+                            </div>
+                            <div class="sensor-mini">
+                                <span>Turbidity</span>
+                                <strong id="turbReading">5.2 NTU</strong>
+                                <div class="trust-track"><div class="trust-fill" id="turbTrust"></div></div>
+                            </div>
+                        </div>
+                    </article>
+
+                    <article class="card portfolio-card">
+                        <div class="section-title">
+                            <h2>Liquid Monitoring Portfolio</h2>
+                            <span class="tiny-badge">Live</span>
+                        </div>
+                        <h2>GangaEdge Field Intelligence</h2>
+                        <p>Dual-node water telemetry with trust scoring, local fallback values, and batch cloud recovery.</p>
+                        <div class="portfolio-actions">
+                            <button><i class="fa-solid fa-plug"></i> Connect ESP32 Node</button>
+                            <button><i class="fa-solid fa-database"></i> Open Cloud Buffer</button>
+                        </div>
+                    </article>
+
+                    <article class="card weather-card">
+                        <div class="section-title">
+                            <h2>Weather Context</h2>
+                            <span class="status warn">Watch</span>
+                        </div>
+                        <div class="weather-value">
+                            <i class="fa-solid fa-cloud-sun-rain"></i>
+                            <strong>29.4</strong>
+                            <span class="subtle">C</span>
+                        </div>
+                        <div class="weather-grid">
+                            <div><span>Rain</span><strong>0.4 mm</strong></div>
+                            <div><span>Wind</span><strong>8.1 km/h</strong></div>
+                            <div><span>Mode</span><strong>Clear</strong></div>
+                            <div><span>Rule</span><strong>Turbidity relaxed</strong></div>
+                        </div>
+                    </article>
+
+                    <article class="card node-card">
+                        <div class="section-title">
+                            <div>
+                                <h2>Edge Pipeline</h2>
+                                <span class="subtle">ESP32 nodes, edge trust engine, and cloud sync path</span>
+                            </div>
+                            <span class="status">Online</span>
+                        </div>
+                        <div class="topology">
+                            <div class="node">
+                                <i class="fa-solid fa-tower-broadcast"></i>
+                                <strong>Node A + Node B</strong>
+                                <span>Upstream and downstream telemetry streams</span>
+                            </div>
+                            <div class="flow"></div>
+                            <div class="node">
+                                <i class="fa-solid fa-shield-halved"></i>
+                                <strong>AI Trust Engine</strong>
+                                <span>Z-score, delta-rate, stuck-value, and hard-bound checks</span>
+                            </div>
+                            <div class="flow"></div>
+                            <div class="node">
+                                <i class="fa-solid fa-cloud-arrow-up"></i>
+                                <strong>Cloud Database</strong>
+                                <span>MQTT transport and Google Sheets telemetry log</span>
+                            </div>
+                        </div>
+                    </article>
+
+                    <article class="card team-card">
+                        <div class="section-title">
+                            <h2>Team Collaboration</h2>
+                            <button class="btn"><i class="fa-solid fa-plus"></i> Add</button>
+                        </div>
+                        <div class="team-list">
+                            <div class="team-member">
+                                <div class="member-avatar">AI</div>
+                                <div><strong>Trust Scoring</strong><span>Filtering and fallback decisions</span></div>
+                                <span class="status">Ready</span>
+                            </div>
+                            <div class="team-member">
+                                <div class="member-avatar">MQ</div>
+                                <div><strong>MQTT Uplink</strong><span>HiveMQ live packet routing</span></div>
+                                <span class="status">Online</span>
+                            </div>
+                            <div class="team-member">
+                                <div class="member-avatar">GS</div>
+                                <div><strong>Google Sheets</strong><span>Cloud telemetry archive</span></div>
+                                <span class="status warn">Syncing</span>
+                            </div>
+                            <div class="team-member">
+                                <div class="member-avatar">WX</div>
+                                <div><strong>Weather Guard</strong><span>Rain-aware turbidity thresholds</span></div>
+                                <span class="status">Active</span>
+                            </div>
+                        </div>
+                    </article>
+
+                    <article class="card progress-card">
+                        <div class="section-title">
+                            <h2>Project Progress</h2>
+                            <span class="subtle">Prototype readiness</span>
+                        </div>
+                        <div class="progress-wrap">
+                            <div class="progress-ring"><strong>72%</strong></div>
+                        </div>
+                    </article>
+
+                    <article class="card time-card">
+                        <div class="section-title">
+                            <h2>Time Tracker</h2>
+                        </div>
+                        <div class="time-value" id="uptime">01:24:08</div>
+                        <div class="time-controls">
+                            <button aria-label="Pause"><i class="fa-solid fa-pause"></i></button>
+                            <button aria-label="Stop"><i class="fa-solid fa-stop"></i></button>
+                        </div>
+                    </article>
+                </section>
+            </main>
+        </div>
+    </div>
+
+    <script>
+        const root = document.documentElement;
+        const themeToggle = document.getElementById("themeToggle");
+        const savedTheme = localStorage.getItem("gangaedge-reference-theme") || "light";
+        root.dataset.theme = savedTheme;
+        themeToggle.innerHTML = savedTheme === "dark" ? '<i class="fa-solid fa-sun"></i>' : '<i class="fa-solid fa-moon"></i>';
+
+        themeToggle.addEventListener("click", () => {
+            const nextTheme = root.dataset.theme === "dark" ? "light" : "dark";
+            root.dataset.theme = nextTheme;
+            localStorage.setItem("gangaedge-reference-theme", nextTheme);
+            themeToggle.innerHTML = nextTheme === "dark" ? '<i class="fa-solid fa-sun"></i>' : '<i class="fa-solid fa-moon"></i>';
+            updateChartTheme();
+        });
+
+        const labels = Array.from({ length: 18 }, (_, index) => `${(index - 17) * 2}s`);
+        const values = {
+            tds: labels.map((_, index) => 93 + Math.sin(index / 2.3) * 3),
+            ph: labels.map((_, index) => 96 + Math.cos(index / 2.9) * 2),
+            temp: labels.map((_, index) => 95 + Math.sin(index / 3.2) * 1.8),
+            turb: labels.map((_, index) => 88 + Math.cos(index / 2.1) * 5)
+        };
+
+        const css = name => getComputedStyle(root).getPropertyValue(name).trim();
+        let chart = null;
+        const chartCanvas = document.getElementById("trustChart");
+        if (window.Chart) {
+            chart = new Chart(chartCanvas, {
+            type: "line",
+            data: {
+                labels,
+                datasets: [
+                    { label: "TDS", data: values.tds, borderColor: "#2563eb", backgroundColor: "rgba(37,99,235,.08)", borderWidth: 2.4, pointRadius: 0, tension: 0.38, fill: true },
+                    { label: "pH", data: values.ph, borderColor: "#0f7548", backgroundColor: "rgba(15,117,72,.08)", borderWidth: 2.4, pointRadius: 0, tension: 0.38, fill: true },
+                    { label: "Temp", data: values.temp, borderColor: "#d97706", backgroundColor: "rgba(217,119,6,.08)", borderWidth: 2.4, pointRadius: 0, tension: 0.38, fill: true },
+                    { label: "Turbidity", data: values.turb, borderColor: "#7c3aed", backgroundColor: "rgba(124,58,237,.08)", borderWidth: 2.4, pointRadius: 0, tension: 0.38, fill: true }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { intersect: false, mode: "index" },
+                plugins: {
+                    legend: {
+                        display: true,
+                        position: "bottom",
+                        labels: {
+                            boxWidth: 8,
+                            boxHeight: 8,
+                            usePointStyle: true,
+                            font: { family: "Inter", size: 11, weight: "700" }
+                        }
+                    }
+                },
+                scales: {
+                    x: { grid: {}, ticks: { maxTicksLimit: 6, font: { size: 10 } } },
+                    y: { min: 70, max: 100, grid: {}, ticks: { font: { size: 10 }, callback: value => `${value}%` } }
+                }
+            }
+            });
+        } else {
+            chartCanvas.outerHTML = '<div style="height:100%;display:grid;place-items:center;color:var(--muted);font-weight:700;border:1px dashed var(--border);border-radius:12px;">Chart preview unavailable offline</div>';
+        }
+
+        function updateChartTheme() {
+            if (!chart) return;
+            const muted = css("--muted");
+            const grid = root.dataset.theme === "dark" ? "rgba(255,255,255,.06)" : "rgba(16,23,20,.08)";
+            chart.options.plugins.legend.labels.color = muted;
+            chart.options.scales.x.ticks.color = muted;
+            chart.options.scales.y.ticks.color = muted;
+            chart.options.scales.x.grid.color = grid;
+            chart.options.scales.y.grid.color = grid;
+            chart.update("none");
+        }
+
+        updateChartTheme();
+
+        const readingNodes = {
+            tds: document.getElementById("tdsReading"),
+            ph: document.getElementById("phReading"),
+            temp: document.getElementById("tempReading"),
+            turb: document.getElementById("turbReading")
+        };
+        const trustNodes = {
+            tds: document.getElementById("tdsTrust"),
+            ph: document.getElementById("phTrust"),
+            temp: document.getElementById("tempTrust"),
+            turb: document.getElementById("turbTrust")
+        };
+
+        let tick = 0;
+        let seconds = 5048;
+
+        setInterval(() => {
+            tick += 1;
+            seconds += 2;
+            const readings = {
+                tds: 326 + Math.sin(tick / 3) * 16,
+                ph: 7.14 + Math.cos(tick / 5) * 0.08,
+                temp: 26.8 + Math.sin(tick / 6) * 0.7,
+                turb: 5.2 + Math.cos(tick / 4) * 1.4
+            };
+            const trust = {
+                tds: 93 + Math.sin(tick / 5) * 3,
+                ph: 96 + Math.cos(tick / 4) * 2,
+                temp: 95 + Math.sin(tick / 4.7) * 2,
+                turb: 88 + Math.cos(tick / 3.6) * 5
+            };
+
+            readingNodes.tds.textContent = `${readings.tds.toFixed(0)} ppm`;
+            readingNodes.ph.textContent = readings.ph.toFixed(2);
+            readingNodes.temp.textContent = `${readings.temp.toFixed(1)} C`;
+            readingNodes.turb.textContent = `${readings.turb.toFixed(1)} NTU`;
+
+            Object.entries(trust).forEach(([key, value]) => {
+                trustNodes[key].style.width = `${Math.max(0, Math.min(100, value))}%`;
+                trustNodes[key].style.background = value < 84 ? "var(--warning)" : "var(--accent)";
+            });
+
+            document.getElementById("bufferCount").textContent = String(8 + Math.round(Math.abs(Math.sin(tick / 7)) * 8));
+            document.getElementById("cloudCount").textContent = `${(1.2 + tick / 200).toFixed(1)}k`;
+
+            const hours = String(Math.floor(seconds / 3600)).padStart(2, "0");
+            const minutes = String(Math.floor((seconds % 3600) / 60)).padStart(2, "0");
+            const secs = String(seconds % 60).padStart(2, "0");
+            document.getElementById("uptime").textContent = `${hours}:${minutes}:${secs}`;
+
+            if (chart) {
+                chart.data.labels.push("Now");
+                chart.data.labels.shift();
+                chart.data.datasets[0].data.push(trust.tds);
+                chart.data.datasets[1].data.push(trust.ph);
+                chart.data.datasets[2].data.push(trust.temp);
+                chart.data.datasets[3].data.push(trust.turb);
+                chart.data.datasets.forEach(dataset => dataset.data.shift());
+                chart.update("none");
+            }
+        }, 2000);
+    </script>
+</body>
+</html>

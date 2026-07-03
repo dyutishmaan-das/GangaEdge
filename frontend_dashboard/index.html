@@ -3,403 +3,225 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GangaEdge — Dual Aesthetic Dashboard</title>
-    <!-- Fonts -->
+    <title>GangaEdge Professional Dashboard</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-    <!-- FontAwesome -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <!-- Lordicon -->
-    <script src="https://cdn.lordicon.com/lordicon.js"></script>
-    <!-- Chart.js -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <!-- MQTT.js -->
-    <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
     <link rel="stylesheet" href="style.css">
 </head>
-<body data-theme="dark">
-
-    <!-- SIDEBAR -->
-    <nav class="sidebar" id="sidebar">
-        <div class="sidebar-header">
-            <lord-icon src="https://cdn.lordicon.com/lpddrrng.json" trigger="loop" delay="3000" colors="primary:currentColor" style="width:36px;height:36px"></lord-icon>
-            <span class="sidebar-brand">GangaEdge</span>
-        </div>
-        <ul class="nav-list">
-            <li class="nav-item active" data-section="overview">
-                <i class="fa-solid fa-house"></i>
-                <span>Dashboard</span>
-            </li>
-            <li class="nav-item" data-section="sensors">
-                <i class="fa-solid fa-microchip"></i>
-                <span>Sensors</span>
-            </li>
-            <li class="nav-item" data-section="analytics">
-                <i class="fa-solid fa-chart-pie"></i>
-                <span>Analytics</span>
-            </li>
-            <li class="nav-item" data-section="nodes">
-                <i class="fa-solid fa-network-wired"></i>
-                <span>Network</span>
-            </li>
-            <li class="nav-item" data-section="logs">
-                <i class="fa-solid fa-terminal"></i>
-                <span>Logs</span>
-            </li>
-            <li class="nav-item" data-section="settings">
-                <i class="fa-solid fa-gear"></i>
-                <span>Settings</span>
-            </li>
-        </ul>
-    </nav>
-
-    <div class="main-wrapper">
-        <!-- TOPBAR -->
-        <header class="topbar">
-            <div class="topbar-left">
-                <h1 id="brand-name">Command Center</h1>
-                <p id="brand-subtitle">Plan, prioritize, and monitor water quality in real-time.</p>
-            </div>
-
-            <div class="topbar-actions">
-                <!-- Status Dots -->
-                <div class="status-indicator">
-                    <span id="node-a-status-dot" class="status-dot offline"></span>
-                    <div class="status-lbl">
-                        <span class="lbl-top">Node A</span>
-                        <span id="node-a-status-text" class="lbl-bottom text-red">OFFLINE</span>
-                    </div>
-                </div>
-                <div class="status-indicator">
-                    <span id="node-b-status-dot" class="status-dot offline"></span>
-                    <div class="status-lbl">
-                        <span class="lbl-top">Node B</span>
-                        <span id="node-b-status-text" class="lbl-bottom text-red">OFFLINE</span>
+<body>
+    <div class="stage">
+        <div class="app">
+            <aside class="sidebar">
+                <div class="brand">
+                    <div class="brand-mark"><i class="fa-solid fa-water"></i></div>
+                    <div>
+                        <strong>GangaEdge</strong>
+                        <span>Water quality assets</span>
                     </div>
                 </div>
 
-                <!-- Cloud Toggle -->
-                <div class="status-indicator" style="margin-left: 20px;">
-                    <label class="switch-container">
-                        <input type="checkbox" id="cloud-toggle" checked>
-                        <span class="slider"></span>
+                <div>
+                    <p class="nav-title">Menu</p>
+                    <nav class="nav" aria-label="Dashboard navigation">
+                        <button class="nav-item active" data-page="view-dashboard"><i class="fa-solid fa-grip"></i><span>Dashboard</span></button>
+                        <button class="nav-item" data-page="view-sensors"><i class="fa-solid fa-microchip"></i><span>Sensors</span><span class="tiny-badge" id="nav-sensor-badge">4</span></button>
+                        <button class="nav-item" data-page="view-calendar"><i class="fa-regular fa-calendar"></i><span>Calendar</span></button>
+                        <button class="nav-item" data-page="view-analytics"><i class="fa-solid fa-chart-simple"></i><span>Analytics</span></button>
+                        <button class="nav-item" data-page="view-logs"><i class="fa-solid fa-terminal"></i><span>Alerts/Logs</span></button>
+                    </nav>
+                </div>
+            </aside>
+
+            <main class="main">
+                <header class="topbar">
+                    <label class="search">
+                        <i class="fa-solid fa-magnifying-glass"></i>
+                        <input type="search" placeholder="Search telemetry">
                     </label>
-                    <div class="status-lbl">
-                        <span class="lbl-top">Uplink</span>
-                        <span id="cloud-status-text" class="lbl-bottom text-green">CONNECTED</span>
-                    </div>
-                </div>
-
-                <!-- Sync -->
-                <div class="status-indicator">
-                    <span id="sync-icon" class="sync-state-dot idle"></span>
-                    <div class="status-lbl">
-                        <span class="lbl-top">Sync</span>
-                        <span id="sync-status-text" class="lbl-bottom">IDLE</span>
-                    </div>
-                </div>
-
-                <!-- Theme Toggle -->
-                <button class="theme-toggle" id="theme-toggle" aria-label="Toggle theme">
-                    <i class="fa-solid fa-moon" id="theme-icon"></i>
-                </button>
-            </div>
-        </header>
-
-        <!-- CONTENT -->
-        <main class="content">
-
-                <!-- VIEW: OVERVIEW -->
-                <div class="page-view dashboard-bento active" id="view-overview">
-                    <!-- Stats (Span 12 / 4 cols) -->
-                    <div class="stat-group">
-                    <div class="stat-card">
-                        <span class="stat-label">Buffered Telemetry</span>
-                        <span id="stat-buffer" class="stat-value text-amber">0</span>
-                        <span class="stat-desc">Awaiting upload on outage</span>
-                    </div>
-                    <div class="stat-card">
-                        <span class="stat-label">Cloud Records</span>
-                        <span id="stat-cloud-records" class="stat-value text-green">0</span>
-                        <span class="stat-desc">Successfully synchronized</span>
-                    </div>
-                    <div class="stat-card">
-                        <span class="stat-label">Edge Sync Rate</span>
-                        <span id="stat-sync-rate" class="stat-value">5 Hz</span>
-                        <span class="stat-desc">Draining speed</span>
-                    </div>
-                    <div class="stat-card">
-                        <span class="stat-label">Active Sensors</span>
-                        <span id="stat-active-sensors" class="stat-value">4 / 4</span>
-                        <span class="stat-desc" id="stat-faults">0 currently degraded</span>
-                    </div>
-                    </div> <!-- Close stat-group -->
-                    
-                    <!-- Topology (Span 12) -->
-                    <div class="bento-card topology-box">
-                        <div class="topology-container">
-                            <div class="topology-node" id="node-sensors">
-                                <i class="fa-solid fa-microchip" style="font-size:1.5rem; color:var(--accent);"></i>
-                                <div class="node-title">Sensor Array</div>
-                                <div class="node-meta">Raw Streams</div>
-                            </div>
-                            <div class="topology-flow-line" id="flow-sensor-to-edge">
-                                <div class="flow-particles" id="particles-edge"></div>
-                            </div>
-                            <div class="topology-node" id="node-edge">
-                                <i class="fa-solid fa-shield-halved" style="font-size:1.5rem; color:var(--accent);"></i>
-                                <div class="node-title" id="edge-node-title">GangaEdge Server</div>
-                                <div class="node-meta">AI Trust Engine</div>
-                            </div>
-                            <div class="topology-flow-line" id="flow-edge-to-cloud">
-                                <div class="flow-particles" id="particles-cloud"></div>
-                            </div>
-                            <div class="topology-node" id="node-cloud">
-                                <i class="fa-solid fa-cloud" style="font-size:1.5rem; color:var(--accent);"></i>
-                                <div class="node-title">Central Cloud</div>
-                                <div class="node-meta" id="cloud-meta-text">Sync Target</div>
+                    <div class="top-actions">
+                        <button class="icon-btn" aria-label="Messages"><i class="fa-regular fa-envelope"></i></button>
+                        <button class="icon-btn" aria-label="Notifications"><i class="fa-regular fa-bell"></i></button>
+                        <button class="theme-toggle" id="themeToggle" aria-label="Toggle theme"><i class="fa-solid fa-sun"></i></button>
+                        <div class="user">
+                            <div class="avatar">DD</div>
+                            <div>
+                                <strong>Dyutishmaan Das</strong>
+                                <span>GangaEdge dashboard</span>
                             </div>
                         </div>
                     </div>
-                </div> <!-- END VIEW: OVERVIEW -->
+                </header>
 
-                <!-- VIEW: ANALYTICS -->
-                <div class="page-view dashboard-bento" id="view-analytics">
-                    <!-- Chart (Span 8) -->
-                    <div class="bento-card chart-box">
-                    <div class="card-header">
-                        <div class="card-title"><i class="fa-solid fa-chart-line"></i> AI Trust Scoring Analytics</div>
-                        <div class="chart-legend">
-                            <span class="legend-color legend-s1"></span><span class="text-secondary">TDS</span>
-                            <span class="legend-color legend-s2"></span><span class="text-secondary">pH</span>
-                            <span class="legend-color legend-s3"></span><span class="text-secondary">Temp</span>
-                            <span class="legend-color legend-s4"></span><span class="text-secondary">Turbidity</span>
-                        </div>
+                <section class="hero-row">
+                    <div class="heading">
+                        <h1 id="page-title">Dashboard</h1>
+                        <p id="page-desc">Plan, prioritize, and monitor Ganga canal water quality with resilient edge intelligence.</p>
                     </div>
-                    <div class="chart-container">
-                        <canvas id="trustChart"></canvas>
+                    <div class="primary-actions">
+                        <button class="btn primary"><i class="fa-solid fa-bolt"></i> Activate Edge Sync</button>
                     </div>
-                </div>
+                </section>
 
-                <!-- Weather (Span 4) -->
-                <div class="bento-card weather-box">
-                    <div class="card-header">
-                        <div class="card-title"><i class="fa-solid fa-cloud-sun-rain"></i> Weather Context</div>
-                        <span id="weather-badge" class="badge green">CLEAR</span>
-                    </div>
-                    <div class="weather-main">
-                        <span id="weather-icon" class="weather-temp-val">☀️</span>
-                        <div>
-                            <span id="weather-temp" class="weather-temp-val">--</span>
-                            <span class="text-secondary">°C</span>
-                        </div>
-                    </div>
-                    <div class="weather-details">
-                        <div>
-                            <div class="text-muted" style="font-size:0.8rem">Precipitation</div>
-                            <div id="weather-precipitation" style="font-weight:600">-- mm</div>
-                        </div>
-                        <div>
-                            <div class="text-muted" style="font-size:0.8rem">Rain Rate</div>
-                            <div id="weather-rain" style="font-weight:600">-- mm</div>
-                        </div>
-                        <div>
-                            <div class="text-muted" style="font-size:0.8rem">Wind Speed</div>
-                            <div id="weather-wind" style="font-weight:600">-- km/h</div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Dual Node Analysis (Span 8) -->
-                <div class="bento-card dual-node-box card-neon">
-                    <div class="card-header">
-                        <div class="card-title"><i class="fa-solid fa-arrows-spin"></i> Dual-Node Pollution Flow Analysis</div>
-                        <span class="badge" id="overall-trend-badge">STABLE</span>
-                    </div>
-                    
-                    <div class="flow-diagram">
-                        <div class="flow-node">
-                            <span class="node-label">Node A</span><br>
-                            <span id="node-a-status" class="node-status text-green">ONLINE</span>
-                        </div>
-                        <div class="flow-arrow" style="text-align: center;">
-                            <i class="fa-solid fa-circle-arrow-right flow-arrow-icon"></i><br>
-                            <span id="transit-time-display" style="font-size:0.75rem; color:var(--text-muted)">Transit: 15s</span>
-                        </div>
-                        <div class="flow-node">
-                            <span class="node-label">Node B</span><br>
-                            <span id="node-b-status" class="node-status text-green">ONLINE</span>
-                        </div>
+                <!-- VIEW: DASHBOARD (Overview) -->
+                <section class="dashboard-grid page-view active" id="view-dashboard">
+                    <div class="stat-grid">
+                        <article class="stat-card featured">
+                            <div class="stat-top"><span>Active Sensors</span><span class="arrow"><i class="fa-solid fa-arrow-up-right"></i></span></div>
+                            <div class="stat-value" id="stat-active-sensors">4</div>
+                            <div class="stat-note" id="stat-faults"><i class="fa-solid fa-chart-line"></i> All streams online</div>
+                        </article>
+                        <article class="stat-card">
+                            <div class="stat-top"><span>Buffered Records</span><span class="arrow"><i class="fa-solid fa-arrow-up-right"></i></span></div>
+                            <div class="stat-value" id="stat-buffered">0</div>
+                            <div class="stat-note"><i class="fa-solid fa-arrow-trend-up"></i> Outage ready</div>
+                        </article>
+                        <article class="stat-card">
+                            <div class="stat-top"><span>Cloud Records</span><span class="arrow"><i class="fa-solid fa-arrow-up-right"></i></span></div>
+                            <div class="stat-value" id="stat-cloud">0</div>
+                            <div class="stat-note"><i class="fa-solid fa-cloud-arrow-up"></i> MQTT connected</div>
+                        </article>
+                        <article class="stat-card">
+                            <div class="stat-top"><span>Risk State</span><span class="arrow"><i class="fa-solid fa-arrow-up-right"></i></span></div>
+                            <div class="stat-value" id="stat-risk">Low</div>
+                            <div class="stat-note"><i class="fa-solid fa-shield-halved"></i> No unsafe band</div>
+                        </article>
                     </div>
 
-                    <div class="comparison-list">
-                        <!-- TDS -->
-                        <div class="comparison-item" data-sensor="tds">
-                            <div class="comp-meta">
-                                <span class="comp-name">TDS</span>
-                                <span id="tds-delta" class="comp-delta text-green">0 ppm</span>
+                    <article class="card node-card">
+                        <div class="section-title">
+                            <div>
+                                <h2>Edge Pipeline</h2>
+                                <span class="subtle">ESP32 nodes, edge trust engine, and cloud sync path</span>
                             </div>
-                            <div class="comp-bar-row">
-                                <span class="bar-lbl">Node A</span>
-                                <div class="progress-bar-bg"><div id="tds-bar-a" class="progress-bar" style="width: 50%;"></div></div>
-                                <span id="tds-val-a" class="bar-val">--</span>
+                            <span class="status">Online</span>
+                        </div>
+                        <div class="topology">
+                            <div class="node">
+                                <i class="fa-solid fa-tower-broadcast"></i>
+                                <strong id="node-a-status">Node A Online</strong>
+                                <strong>+</strong>
+                                <strong id="node-b-status">Node B Simulated</strong>
                             </div>
-                            <div class="comp-bar-row">
-                                <span class="bar-lbl">Node B</span>
-                                <div class="progress-bar-bg"><div id="tds-bar-b" class="progress-bar" style="width: 50%;"></div></div>
-                                <span id="tds-val-b" class="bar-val">--</span>
+                            <div class="flow"></div>
+                            <div class="node">
+                                <i class="fa-solid fa-shield-halved"></i>
+                                <strong>AI Trust Engine</strong>
+                                <span>Z-score and stuck-value checks</span>
+                            </div>
+                            <div class="flow"></div>
+                            <div class="node">
+                                <i class="fa-solid fa-cloud-arrow-up"></i>
+                                <strong id="cloud-status">Cloud Database</strong>
+                                <span id="cloud-meta-text">Google Sheets archive</span>
                             </div>
                         </div>
-                        <!-- pH -->
-                        <div class="comparison-item" data-sensor="ph">
-                            <div class="comp-meta">
-                                <span class="comp-name">pH</span>
-                                <span id="ph-delta" class="comp-delta text-green">0.0</span>
-                            </div>
-                            <div class="comp-bar-row">
-                                <span class="bar-lbl">Node A</span>
-                                <div class="progress-bar-bg"><div id="ph-bar-a" class="progress-bar" style="width: 50%;"></div></div>
-                                <span id="ph-val-a" class="bar-val">--</span>
-                            </div>
-                            <div class="comp-bar-row">
-                                <span class="bar-lbl">Node B</span>
-                                <div class="progress-bar-bg"><div id="ph-bar-b" class="progress-bar" style="width: 50%;"></div></div>
-                                <span id="ph-val-b" class="bar-val">--</span>
-                            </div>
-                        </div>
-                        <!-- Temp -->
-                        <div class="comparison-item" data-sensor="temp">
-                            <div class="comp-meta">
-                                <span class="comp-name">Temp</span>
-                                <span id="temp-delta" class="comp-delta text-green">0.0°C</span>
-                            </div>
-                            <div class="comp-bar-row">
-                                <span class="bar-lbl">Node A</span>
-                                <div class="progress-bar-bg"><div id="temp-bar-a" class="progress-bar" style="width: 50%;"></div></div>
-                                <span id="temp-val-a" class="bar-val">--</span>
-                            </div>
-                            <div class="comp-bar-row">
-                                <span class="bar-lbl">Node B</span>
-                                <div class="progress-bar-bg"><div id="temp-bar-b" class="progress-bar" style="width: 50%;"></div></div>
-                                <span id="temp-val-b" class="bar-val">--</span>
-                            </div>
-                        </div>
-                        <!-- Turb -->
-                        <div class="comparison-item" data-sensor="turb">
-                            <div class="comp-meta">
-                                <span class="comp-name">Turbidity</span>
-                                <span id="turb-delta" class="comp-delta text-green">0.0 NTU</span>
-                            </div>
-                            <div class="comp-bar-row">
-                                <span class="bar-lbl">Node A</span>
-                                <div class="progress-bar-bg"><div id="turb-bar-a" class="progress-bar" style="width: 50%;"></div></div>
-                                <span id="turb-val-a" class="bar-val">--</span>
-                            </div>
-                            <div class="comp-bar-row">
-                                <span class="bar-lbl">Node B</span>
-                                <div class="progress-bar-bg"><div id="turb-bar-b" class="progress-bar" style="width: 50%;"></div></div>
-                                <span id="turb-val-b" class="bar-val">--</span>
-                            </div>
-                        </div>
-                    </div>
-                </div> <!-- END VIEW: ANALYTICS -->
+                    </article>
 
-                <!-- VIEW: LOGS -->
-                <div class="page-view dashboard-bento" id="view-logs">
-                    <!-- Terminal (Span 4) -->
-                    <div class="bento-card terminal-box">
-                    <div class="card-header">
-                        <div class="card-title"><i class="fa-solid fa-terminal"></i> Edge Log</div>
-                        <button id="clear-terminal" style="background:none; border:none; color:var(--text-muted); cursor:pointer;"><i class="fa-solid fa-trash-can"></i></button>
-                    </div>
-                    <div class="terminal-body" id="edge-terminal">
-                        <!-- Initialized dynamically -->
-                    </div>
-                </div>
-                </div> <!-- END VIEW: LOGS -->
+                    <article class="card time-card">
+                        <div class="section-title">
+                            <h2>Uptime Tracker</h2>
+                        </div>
+                        <div class="time-value" id="uptime">00:00:00</div>
+                    </article>
+                </section>
 
                 <!-- VIEW: SENSORS -->
-                <div class="page-view dashboard-bento" id="view-sensors">
-                    <!-- Sensor Grid (Span 12) -->
-                    <div class="bento-card sensor-box">
-                    <div class="card-header">
-                        <div class="card-title"><i class="fa-solid fa-gauge-high"></i> Sensor Array</div>
-                    </div>
-                    <div class="sensor-grid" id="sensor-container">
-                        <!-- Sensors dynamically generated -->
-                    </div>
-                </div>
-                </div> <!-- END VIEW: SENSORS -->
-
-                <!-- VIEW: NODES -->
-                <div class="page-view dashboard-bento" id="view-nodes">
-                    <!-- Databases (Span 12) -->
-                    <div class="bento-card db-box">
-                    <div class="card-header">
-                        <div class="card-title"><i class="fa-solid fa-database"></i> Distributed Database State</div>
-                    </div>
-                    <div class="db-split-container">
-                        <div>
-                            <div style="display:flex; justify-content:space-between; margin-bottom:12px;">
-                                <span style="font-weight:600;"><i class="fa-solid fa-hdd"></i> Edge Buffer</span>
-                                <span id="queue-size-badge" class="badge">0</span>
-                            </div>
-                            <div class="table-wrapper">
-                                <table id="edge-queue-table">
-                                    <thead><tr><th>Time</th><th>Sensor</th><th>Val</th><th>Status</th></tr></thead>
-                                    <tbody id="edge-queue-body">
-                                        <tr><td colspan="4" class="empty-placeholder">Queue empty.</td></tr>
-                                    </tbody>
-                                </table>
+                <section class="dashboard-grid page-view" id="view-sensors">
+                    <article class="card chart-card" style="grid-column: span 3;">
+                        <div class="section-title">
+                            <div>
+                                <h2>Live Sensor Streams</h2>
+                                <span class="subtle">Real-time values from Edge Node</span>
                             </div>
                         </div>
-                        <div>
-                            <div style="display:flex; justify-content:space-between; margin-bottom:12px;">
-                                <span style="font-weight:600; color:var(--green);"><i class="fa-solid fa-cloud-arrow-up"></i> Cloud DB</span>
-                                <span id="cloud-size-badge" class="badge green">0</span>
+                        <div class="sensor-row">
+                            <div class="sensor-mini" id="sensor-card-tds">
+                                <span>TDS</span>
+                                <strong id="val-tds">-- ppm</strong>
+                                <div class="trust-track"><div class="trust-fill" id="trust-tds"></div></div>
                             </div>
-                            <div class="table-wrapper">
-                                <table id="cloud-db-table">
-                                    <thead><tr><th>Time</th><th>Sensor</th><th>Val</th><th>Trust</th></tr></thead>
-                                    <tbody id="cloud-db-body">
-                                        <tr><td colspan="4" class="empty-placeholder">No telemetry logged.</td></tr>
-                                    </tbody>
-                                </table>
+                            <div class="sensor-mini" id="sensor-card-ph">
+                                <span>pH</span>
+                                <strong id="val-ph">--</strong>
+                                <div class="trust-track"><div class="trust-fill" id="trust-ph"></div></div>
+                            </div>
+                            <div class="sensor-mini" id="sensor-card-temp">
+                                <span>Temperature</span>
+                                <strong id="val-temp">-- C</strong>
+                                <div class="trust-track"><div class="trust-fill" id="trust-temp"></div></div>
+                            </div>
+                            <div class="sensor-mini" id="sensor-card-turb">
+                                <span>Turbidity</span>
+                                <strong id="val-turb">-- NTU</strong>
+                                <div class="trust-track"><div class="trust-fill" id="trust-turb"></div></div>
                             </div>
                         </div>
-                    </div>
-                </div>
-                </div> <!-- END VIEW: NODES -->
+                    </article>
 
-            </div>
-        </main>
-        
-        <footer style="text-align:center; padding: 20px; color:var(--text-muted); font-size:0.8rem;" id="footer-text">
-            GangaEdge Framework &bull; Developed by Dyutishmaan Das
-        </footer>
+                    <article class="card weather-card" style="grid-column: span 3;">
+                        <div class="section-title">
+                            <h2>Weather Context</h2>
+                            <span class="status warn">Watch</span>
+                        </div>
+                        <div class="weather-value">
+                            <i class="fa-solid fa-cloud-sun-rain"></i>
+                            <strong>29.4</strong>
+                            <span class="subtle">C</span>
+                        </div>
+                        <div class="weather-grid">
+                            <div><span>Rain</span><strong>0.4 mm</strong></div>
+                            <div><span>Wind</span><strong>8.1 km/h</strong></div>
+                            <div><span>Mode</span><strong>Clear</strong></div>
+                            <div><span>Rule</span><strong>Turbidity relaxed</strong></div>
+                        </div>
+                    </article>
+                </section>
+
+                <!-- VIEW: CALENDAR -->
+                <section class="dashboard-grid page-view" id="view-calendar">
+                    <article class="card" style="grid-column: span 3; min-height: 400px; display: grid; place-items: center; color: var(--muted);">
+                        <div style="text-align:center;">
+                            <i class="fa-regular fa-calendar" style="font-size: 3rem; margin-bottom: 16px; opacity: 0.5;"></i>
+                            <h3>Deployment Schedule</h3>
+                            <p>No active field missions scheduled for today.</p>
+                        </div>
+                    </article>
+                </section>
+
+                <!-- VIEW: ANALYTICS -->
+                <section class="dashboard-grid page-view" id="view-analytics">
+                    <article class="card chart-card" style="grid-column: span 3;">
+                        <div class="section-title">
+                            <div>
+                                <h2>Trust Score Analytics</h2>
+                                <span class="subtle">Weather-aware sensor confidence over time</span>
+                            </div>
+                            <button class="btn"><i class="fa-solid fa-clock"></i> Live</button>
+                        </div>
+                        <div class="chart-wrap"><canvas id="trustChart"></canvas></div>
+                    </article>
+                </section>
+
+                <!-- VIEW: LOGS -->
+                <section class="dashboard-grid page-view" id="view-logs">
+                    <div class="terminal-box">
+                        <div class="terminal-header">
+                            <span><i class="fa-solid fa-terminal"></i> Edge Console</span>
+                            <button id="clear-terminal" style="background:none; border:none; color:inherit; cursor:pointer;"><i class="fa-solid fa-trash-can"></i> Clear</button>
+                        </div>
+                        <div class="terminal-body" id="edge-terminal">
+                            <!-- Logs go here -->
+                        </div>
+                    </div>
+                </section>
+
+            </main>
+        </div>
     </div>
-
-    <!-- Scripts -->
-    <script>
-    (function() {
-        const html = document.documentElement;
-        const themeToggle = document.getElementById('theme-toggle');
-        const themeIcon = document.getElementById('theme-icon');
-        const saved = localStorage.getItem('gangaedge-theme') || 'light'; // Defaulting to light as requested
-        
-        html.setAttribute('data-theme', saved);
-        themeIcon.className = saved === 'dark' ? 'fa-solid fa-sun' : 'fa-solid fa-moon';
-
-        themeToggle.addEventListener('click', () => {
-            const current = html.getAttribute('data-theme');
-            const next = current === 'dark' ? 'light' : 'dark';
-            html.setAttribute('data-theme', next);
-            localStorage.setItem('gangaedge-theme', next);
-            themeIcon.className = next === 'dark' ? 'fa-solid fa-sun' : 'fa-solid fa-moon';
-        });
-    })();
-    </script>
+    
     <script src="app.js"></script>
 </body>
 </html>

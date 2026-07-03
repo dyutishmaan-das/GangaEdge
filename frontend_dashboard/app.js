@@ -955,10 +955,10 @@ function systemTickLoop() {
     });
 
     // Update statistics panels
-    document.getElementById('stat-buffer').innerText = localQueue.length;
-    document.getElementById('stat-cloud-records').innerText = cloudDb.length;
-    document.getElementById('queue-size-badge').innerText = `${localQueue.length} items`;
-    document.getElementById('cloud-size-badge').innerText = `${cloudDb.length} entries`;
+    const statBuffer = document.getElementById('stat-buffered');
+    if(statBuffer) statBuffer.innerText = localQueue.length;
+    const statCloud = document.getElementById('stat-cloud');
+    if(statCloud) statCloud.innerText = cloudDb.length;
 
     // 3. Update trust history chart
     updateChart(tickData);
@@ -980,7 +980,7 @@ function setupEventListeners() {
             
             // Add active to clicked nav and corresponding page
             item.classList.add('active');
-            const targetId = 'view-' + item.getAttribute('data-section');
+            const targetId = item.getAttribute('data-page');
             const targetView = document.getElementById(targetId);
             if(targetView) targetView.classList.add('active');
         });
@@ -1388,6 +1388,32 @@ function initChart() {
             }
         }
     });
+
+    // Theme toggle
+    const root = document.documentElement;
+    const themeToggle = document.getElementById("themeToggle");
+    const savedTheme = localStorage.getItem("gangaedge-theme") || "dark";
+    root.dataset.theme = savedTheme;
+    if(themeToggle) {
+        themeToggle.innerHTML = savedTheme === "dark" ? '<i class="fa-solid fa-sun"></i>' : '<i class="fa-solid fa-moon"></i>';
+        themeToggle.addEventListener("click", () => {
+            const nextTheme = root.dataset.theme === "dark" ? "light" : "dark";
+            root.dataset.theme = nextTheme;
+            localStorage.setItem("gangaedge-theme", nextTheme);
+            themeToggle.innerHTML = nextTheme === "dark" ? '<i class="fa-solid fa-sun"></i>' : '<i class="fa-solid fa-moon"></i>';
+        });
+    }
+
+    // Uptime tracker
+    let uptimeSeconds = 0;
+    setInterval(() => {
+        uptimeSeconds++;
+        const h = String(Math.floor(uptimeSeconds / 3600)).padStart(2, "0");
+        const m = String(Math.floor((uptimeSeconds % 3600) / 60)).padStart(2, "0");
+        const s = String(uptimeSeconds % 60).padStart(2, "0");
+        const ut = document.getElementById("uptime");
+        if(ut) ut.textContent = `${h}:${m}:${s}`;
+    }, 1000);
 }
 
 function updateChart(tickData) {
