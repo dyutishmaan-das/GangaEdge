@@ -338,6 +338,7 @@ body {
 .legend-s1 { background: #3b82f6; } .legend-s2 { background: #10b981; } .legend-s3 { background: #f59e0b; } .legend-s4 { background: #ef4444; }
 
 /* Terminal */
+.terminal-box { grid-column: span 12; min-height: 600px; }
 .terminal-body { background: var(--terminal-bg); flex:1; border-radius: var(--btn-radius); padding: 16px; font-family: var(--font-mono); font-size: 0.8rem; overflow-y: auto; color: #34d399; }
 .system-line { color: #818cf8; } .warn-line { color: #fbbf24; } .error-line { color: #f87171; }
 .terminal-line { margin-bottom: 4px; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 4px; word-wrap: break-word;}
