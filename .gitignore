@@ -1,0 +1,23 @@
+# Compiled binaries / firmware outputs
+*.hex
+*.bin
+*.elf
+*.o
+
+# OS generated files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE config files
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+
+# Logs
+logs/
+*.log

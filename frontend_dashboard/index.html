@@ -1,0 +1,679 @@
+<!DOCTYPE html>
+<html class="dark" lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <meta content="width=device-width, initial-scale=1.0" name="viewport">
+    <title>GangaEdge | Resilient IoT Water Command Center</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <!-- Google Fonts -->
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap"
+        rel="stylesheet">
+    <!-- FontAwesome for professional icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- MQTT.js for HiveMQ WebSocket Connection -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mqtt/4.3.7/mqtt.min.js"></script>
+    <!-- Local styles override -->
+    <link rel="stylesheet" href="style.css">
+
+    <script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        'navy-bg': 'var(--bg-page)',
+                        'panel-bg': 'var(--bg-panel)',
+                        'cyan-accent': 'var(--accent-cyan)',
+                        'magenta-accent': 'var(--accent-magenta)',
+                        'purple-accent': 'var(--accent-purple)',
+                        'electric-blue': 'var(--accent-blue)',
+                        'soft-green': 'var(--accent-green)',
+                        'light-gray': 'var(--text-secondary)',
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+
+<body class="bg-navy-bg text-[var(--text-primary)] font-sans transition-colors duration-200 min-h-screen flex flex-col relative">
+
+    <!-- Ambient background glows for Glassmorphism -->
+    <div class="fixed top-[15%] left-[5%] w-[450px] h-[450px] rounded-full bg-[var(--accent-cyan)]/5 blur-[120px] pointer-events-none z-0"></div>
+    <div class="fixed bottom-[15%] right-[10%] w-[500px] h-[500px] rounded-full bg-[var(--accent-green)]/5 blur-[140px] pointer-events-none z-0"></div>
+    <div class="fixed top-[55%] left-[40%] w-[350px] h-[350px] rounded-full bg-[var(--accent-purple)]/5 blur-[110px] pointer-events-none z-0"></div>
+
+    <!-- Top Persistent Navigation Header -->
+    <header
+        class="fixed top-0 w-full h-20 bg-panel-bg border-b border-[var(--border-color)] flex justify-between items-center px-6 z-50 shadow-sm">
+        <!-- Logo & Weather Context -->
+        <div class="flex items-center gap-4">
+            <div class="flex items-center gap-2">
+                <img src="Picture2.png" alt="GangaEdge Logo" class="h-20 w-auto object-contain">
+                <span class="text-xl font-extrabold tracking-tight text-[var(--text-primary)]">GangaEdge</span>
+            </div>
+
+            <!-- Real-Time Weather Context Box -->
+            <div
+                class="hidden lg:flex items-center gap-3 bg-navy-bg border border-[var(--border-color)] rounded-full px-4 py-1.5 text-xs text-light-gray">
+                <span
+                    class="font-semibold uppercase tracking-wider text-[10px] bg-cyan-accent/15 px-2 py-0.5 rounded-full text-cyan-accent">Roorkee
+                    Station</span>
+                <div class="flex items-center gap-2">
+                    <span id="weather-icon" class="text-sm">☀️</span>
+                    <span id="weather-temp" class="font-bold text-[var(--text-primary)]">--°C</span>
+                </div>
+                <span class="text-light-gray/45">|</span>
+                <div class="flex items-center gap-1">
+                    <i class="fa-solid fa-wind text-cyan-accent"></i>
+                    <span id="weather-wind">-- km/h</span>
+                </div>
+                <span class="text-light-gray/45">|</span>
+                <div class="flex items-center gap-1">
+                    <i class="fa-solid fa-cloud-rain text-cyan-accent"></i>
+                    <span id="weather-rain">-- mm</span>
+                </div>
+                <span id="weather-badge"
+                    class="ml-1 text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-soft-green/15 text-soft-green">CLEAR</span>
+            </div>
+        </div>
+
+        <!-- Navigation Menu Tabs -->
+        <nav class="hidden md:flex items-center gap-6">
+            <button class="nav-btn active text-sm tracking-wide uppercase" data-page="view-overview">Overview</button>
+            <button class="nav-btn text-sm tracking-wide uppercase" data-page="view-sensors">Telemetry</button>
+            <button class="nav-btn text-sm tracking-wide uppercase" data-page="view-analytics">Analytics</button>
+            <button class="nav-btn text-sm tracking-wide uppercase" data-page="view-nodes">Nodes</button>
+            <button class="nav-btn text-sm tracking-wide uppercase" data-page="view-console">Console</button>
+        </nav>
+
+        <!-- Right Header Actions -->
+        <div class="flex items-center gap-4">
+            <!-- Google Sheets Link -->
+            <a href="https://docs.google.com/spreadsheets/" target="_blank"
+                class="w-10 h-10 rounded-full bg-navy-bg border border-[var(--border-color)] flex items-center justify-center text-light-gray hover:text-cyan-accent hover:border-cyan-accent transition-all"
+                title="Open Google Sheets Database">
+                <i class="fa-solid fa-table"></i>
+            </a>
+
+            <!-- Theme Toggle -->
+            <button
+                class="w-10 h-10 rounded-full bg-navy-bg border border-[var(--border-color)] flex items-center justify-center text-light-gray hover:text-cyan-accent hover:border-cyan-accent transition-all"
+                id="theme-toggle" title="Toggle Theme">
+                <i class="fa-solid fa-moon dark:block hidden"></i>
+                <i class="fa-solid fa-sun dark:hidden block text-amber-500"></i>
+            </button>
+
+            <!-- Real-Time Cloud Sync / Buffering Status & Outage Toggle -->
+            <div
+                class="flex items-center gap-3 bg-navy-bg border border-[var(--border-color)] rounded-full px-4 py-1 text-xs">
+                <div class="flex items-center gap-2">
+                    <span id="sync-icon" class="status-dot-active"></span>
+                    <span id="sync-status-text"
+                        class="font-extrabold uppercase text-[10px] text-soft-green tracking-wider">Live Sync</span>
+                </div>
+                <span class="text-light-gray/45">|</span>
+                <div class="flex items-center gap-1.5" title="Simulate Cloud Outage">
+                    <i class="fa-solid fa-cloud-arrow-up text-cyan-accent" id="cloud-icon-header"></i>
+                    <label class="switch">
+                        <input type="checkbox" id="cloud-toggle" checked>
+                        <span class="slider"></span>
+                    </label>
+                </div>
+            </div>
+
+            <!-- Alerts Notification Icon -->
+            <div class="relative tooltip-box">
+                <button
+                    class="w-10 h-10 rounded-full bg-navy-bg border border-[var(--border-color)] flex items-center justify-center text-light-gray hover:text-cyan-accent transition-all"
+                    id="alerts-btn">
+                    <i class="fa-solid fa-bell"></i>
+                    <span
+                        class="absolute top-1 right-1 w-3 h-3 bg-magenta-accent rounded-full border-2 border-panel-bg hidden"
+                        id="alerts-indicator"></span>
+                </button>
+                <div class="tooltip-text" id="alerts-tooltip">System Status: Nominal. Normal turbidity thresholds
+                    active.</div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content Area -->
+    <main class="pt-24 pb-12 px-6 flex-1 w-full max-w-[1536px] mx-auto flex flex-col gap-6">
+
+        <!-- ================= PAGE 1: SYSTEM OVERVIEW ================= -->
+        <div class="page-view flex flex-col gap-6 w-full" id="view-overview">
+
+            <!-- Stat Cards Row -->
+            <section class="grid grid-cols-1 md:grid-cols-4 gap-4 relative z-10">
+                <div class="glass-card gradient-cyan flex justify-between items-center">
+                    <div>
+                        <span class="text-xs text-light-gray uppercase tracking-wider font-semibold">Active
+                            Sensors</span>
+                        <div class="text-3xl font-extrabold mt-1 text-[var(--text-primary)]" id="stat-active-sensors">4
+                            / 4</div>
+                        <span class="text-[10px] text-soft-green font-semibold mt-1 block"><i
+                                class="fa-solid fa-circle-check"></i> Edge trust high</span>
+                    </div>
+                    <div
+                        class="w-12 h-12 bg-cyan-accent/10 rounded-xl flex items-center justify-center text-cyan-accent text-2xl">
+                        <i class="fa-solid fa-microchip"></i>
+                    </div>
+                </div>
+                <div class="glass-card gradient-cyan flex justify-between items-center">
+                    <div>
+                        <span class="text-xs text-light-gray uppercase tracking-wider font-semibold">Buffered
+                            Records</span>
+                        <div class="text-3xl font-extrabold mt-1 text-[var(--text-primary)]" id="stat-buffered">0</div>
+                        <span class="text-[10px] text-light-gray font-semibold mt-1 block" id="queue-size-badge">SPIFFS
+                            buffer clear</span>
+                    </div>
+                    <div
+                        class="w-12 h-12 bg-cyan-accent/10 rounded-xl flex items-center justify-center text-cyan-accent text-2xl">
+                        <i class="fa-solid fa-database"></i>
+                    </div>
+                </div>
+                <div class="glass-card gradient-cyan flex justify-between items-center">
+                    <div>
+                        <span class="text-xs text-light-gray uppercase tracking-wider font-semibold">Cloud
+                            Records</span>
+                        <div class="text-3xl font-extrabold mt-1 text-[var(--text-primary)]" id="stat-cloud">0</div>
+                        <span class="text-[10px] text-light-gray font-semibold mt-1 block" id="cloud-size-badge">MQTT
+                            Sync Stream</span>
+                    </div>
+                    <div
+                        class="w-12 h-12 bg-cyan-accent/10 rounded-xl flex items-center justify-center text-cyan-accent text-2xl">
+                        <i class="fa-solid fa-cloud-arrow-up"></i>
+                    </div>
+                </div>
+                <div class="glass-card gradient-green flex justify-between items-center">
+                    <div>
+                        <span class="text-xs text-light-gray uppercase tracking-wider font-semibold">Risk State</span>
+                        <div class="text-3xl font-extrabold mt-1 text-[var(--text-primary)]" id="stat-risk">NOMINAL
+                        </div>
+                        <span class="text-[10px] text-soft-green font-semibold mt-1 block"><i
+                                class="fa-solid fa-shield-halved"></i> SVM Baseline OK</span>
+                    </div>
+                    <div
+                        class="w-12 h-12 bg-soft-green/10 rounded-xl flex items-center justify-center text-soft-green text-2xl">
+                        <i class="fa-solid fa-lock"></i>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Centerpiece: Topology & Live stream logs -->
+            <section class="grid grid-cols-1 xl:grid-cols-4 gap-6 relative z-10">
+
+                <!-- Topology Diagram -->
+                <div class="xl:col-span-3 glass-card flex flex-col relative overflow-hidden h-[420px]">
+                    <div class="flex items-center justify-between mb-4 border-b border-[var(--border-color)] pb-3">
+                        <div class="flex items-center gap-2">
+                            <i class="fa-solid fa-network-wired text-cyan-accent"></i>
+                            <h3 class="text-sm font-bold text-[var(--text-primary)] uppercase tracking-wider">Live
+                                System Topology</h3>
+                        </div>
+                        <span class="text-[10px] font-bold text-cyan-accent bg-cyan-accent/10 px-2 py-0.5 rounded-full"
+                            id="transit-time-display">Transit Correlation: 15s</span>
+                    </div>
+
+                    <!-- SVG Topology diagram -->
+                    <div class="flex-1 flex items-center justify-center p-4">
+                        <svg viewBox="0 0 800 240" class="w-full max-w-3xl">
+                            <!-- Paths / Flow lines -->
+                            <path d="M120 70 L340 120" stroke-width="2" class="flow-line-active" fill="none"
+                                id="line-a-engine" />
+                            <path d="M120 170 L340 120" stroke-width="2" class="flow-line-active" fill="none"
+                                id="line-b-engine" />
+                            <path d="M220 70 L340 120" stroke-width="1.5" class="flow-line-active"
+                                stroke-dasharray="4,4" fill="none" id="line-c-engine" />
+                            <path d="M220 170 L340 120" stroke-width="1.5" class="flow-line-active"
+                                stroke-dasharray="4,4" fill="none" id="line-d-engine" />
+                            <path d="M460 120 L660 120" stroke-width="2.5" class="flow-line-active" fill="none"
+                                id="flow-edge-to-cloud" />
+
+                            <!-- Node A (Upstream) -->
+                            <g class="cursor-pointer group" id="topo-node-a">
+                                <circle cx="120" cy="70" r="28" fill="var(--bg-panel)" stroke="var(--accent-green)"
+                                    stroke-width="2" id="node-a-circle" />
+                                <text x="120" y="75" font-family="FontAwesome" font-size="16" fill="var(--accent-green)"
+                                    text-anchor="middle" id="node-a-icon">&#xf2db;</text>
+                                <text x="120" y="112" font-family="Inter" font-size="10" font-weight="700"
+                                    fill="var(--text-primary)" text-anchor="middle">NODE A</text>
+                                <text x="120" y="123" font-family="Inter" font-size="8" fill="var(--text-secondary)"
+                                    text-anchor="middle" id="node-a-topo-trust">96.5% Trust</text>
+                            </g>
+
+                            <!-- Node B (Downstream) -->
+                            <g class="cursor-pointer group" id="topo-node-b">
+                                <circle cx="120" cy="170" r="28" fill="var(--bg-panel)" stroke="var(--accent-green)"
+                                    stroke-width="2" id="node-b-circle" />
+                                <text x="120" y="175" font-family="FontAwesome" font-size="16"
+                                    fill="var(--accent-green)" text-anchor="middle" id="node-b-icon">&#xf2db;</text>
+                                <text x="120" y="212" font-family="Inter" font-size="10" font-weight="700"
+                                    fill="var(--text-primary)" text-anchor="middle">NODE B</text>
+                                <text x="120" y="223" font-family="Inter" font-size="8" fill="var(--text-secondary)"
+                                    text-anchor="middle" id="node-b-topo-trust">91.2% Trust</text>
+                            </g>
+
+                            <!-- Node C (Midstream - Virtual) -->
+                            <g class="cursor-pointer group" id="topo-node-c">
+                                <circle cx="220" cy="70" r="22" fill="var(--bg-panel)" stroke="var(--accent-green)"
+                                    stroke-width="1.5" id="node-c-circle" />
+                                <text x="220" y="74" font-family="FontAwesome" font-size="12" fill="var(--accent-green)"
+                                    text-anchor="middle">&#xf2db;</text>
+                                <text x="220" y="104" font-family="Inter" font-size="9" fill="var(--text-secondary)"
+                                    text-anchor="middle">NODE C</text>
+                            </g>
+
+                            <!-- Node D (Bridge - Virtual) -->
+                            <g class="cursor-pointer group" id="topo-node-d">
+                                <circle cx="220" cy="170" r="22" fill="var(--bg-panel)" stroke="var(--accent-green)"
+                                    stroke-width="1.5" id="node-d-circle" />
+                                <text x="220" y="174" font-family="FontAwesome" font-size="12"
+                                    fill="var(--accent-green)" text-anchor="middle">&#xf2db;</text>
+                                <text x="220" y="204" font-family="Inter" font-size="9" fill="var(--text-secondary)"
+                                    text-anchor="middle">NODE D</text>
+                            </g>
+
+                            <!-- Central Trust Engine -->
+                            <g id="topo-node-engine">
+                                <rect x="340" y="85" width="120" height="70" rx="8" fill="var(--bg-panel)"
+                                    stroke="var(--accent-cyan)" stroke-width="2" />
+                                <text x="400" y="115" font-family="FontAwesome" font-size="20" fill="var(--accent-cyan)"
+                                    text-anchor="middle">&#xf521;</text>
+                                <text x="400" y="135" font-family="Inter" font-size="10" font-weight="700"
+                                    fill="var(--text-primary)" text-anchor="middle">AI TRUST ENGINE</text>
+                                <text x="400" y="146" font-family="Inter" font-size="8" fill="var(--accent-cyan)"
+                                    text-anchor="middle">TinyML SVM Active</text>
+                            </g>
+
+                            <!-- Cloud Uplink -->
+                            <g class="cursor-pointer" id="node-cloud">
+                                <circle cx="660" cy="120" r="32" fill="var(--bg-panel)" stroke="var(--accent-cyan)"
+                                    stroke-width="2" id="cloud-circle" />
+                                <text x="660" y="126" font-family="FontAwesome" font-size="24" fill="var(--accent-cyan)"
+                                    text-anchor="middle" id="cloud-icon">&#xf0ee;</text>
+                                <text x="660" y="167" font-family="Inter" font-size="10" font-weight="700"
+                                    fill="var(--text-primary)" text-anchor="middle">CLOUD UPLINK</text>
+                                <text x="660" y="178" font-family="Inter" font-size="8" fill="var(--text-secondary)"
+                                    text-anchor="middle" id="cloud-meta-text">Sync Target</text>
+                            </g>
+                        </svg>
+                    </div>
+                </div>
+
+                <!-- Event logs streamer -->
+                <div class="glass-card flex flex-col h-[420px] overflow-hidden">
+                    <div class="flex items-center justify-between border-b border-[var(--border-color)] pb-3 mb-3">
+                        <div class="flex items-center gap-2">
+                            <i class="fa-solid fa-align-left text-cyan-accent"></i>
+                            <h3 class="text-sm font-bold text-[var(--text-primary)] uppercase tracking-wider">System
+                                Event Stream</h3>
+                        </div>
+                        <span class="w-2.5 h-2.5 rounded-full bg-cyan-accent animate-ping"></span>
+                    </div>
+                    <div class="flex-1 custom-scrollbar overflow-y-auto text-[11px] leading-relaxed font-mono text-light-gray space-y-2 p-1"
+                        id="console-stream">
+                        <div class="text-cyan-accent">[INFO] Initializing system nodes...</div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Bottom Row: Mini-charts -->
+            <section class="grid grid-cols-1 lg:grid-cols-4 gap-6">
+                <!-- TDS mini chart -->
+                <div class="glass-card flex flex-col h-[200px]">
+                    <div class="flex justify-between items-center mb-2 border-b border-[var(--border-color)] pb-1">
+                        <span class="text-[11px] font-bold text-cyan-accent uppercase tracking-wider">TDS (Total
+                            Solids)</span>
+                        <select
+                            class="bg-navy-bg border border-[var(--border-color)] rounded px-1.5 py-0.5 text-[9px] font-bold focus:ring-0 focus:outline-none text-[var(--text-primary)]"
+                            id="node-select-tds">
+                            <option value="node-a">Node A (Upstream)</option>
+                            <option value="node-b">Node B (Downstream)</option>
+                            <option value="node-c">Node C (Midstream)</option>
+                            <option value="node-d">Node D (Bridge)</option>
+                        </select>
+                    </div>
+                    <div class="flex-1 min-h-0"><canvas id="miniChartTds"></canvas></div>
+                </div>
+
+                <!-- pH mini chart -->
+                <div class="glass-card flex flex-col h-[200px]">
+                    <div class="flex justify-between items-center mb-2 border-b border-[var(--border-color)] pb-1">
+                        <span class="text-[11px] font-bold text-soft-green uppercase tracking-wider">pH Acidity</span>
+                        <select
+                            class="bg-navy-bg border border-[var(--border-color)] rounded px-1.5 py-0.5 text-[9px] font-bold focus:ring-0 focus:outline-none text-[var(--text-primary)]"
+                            id="node-select-ph">
+                            <option value="node-a">Node A (Upstream)</option>
+                            <option value="node-b">Node B (Downstream)</option>
+                            <option value="node-c">Node C (Midstream)</option>
+                            <option value="node-d">Node D (Bridge)</option>
+                        </select>
+                    </div>
+                    <div class="flex-1 min-h-0"><canvas id="miniChartPh"></canvas></div>
+                </div>
+
+                <!-- Temp mini chart -->
+                <div class="glass-card flex flex-col h-[200px]">
+                    <div class="flex justify-between items-center mb-2 border-b border-[var(--border-color)] pb-1">
+                        <span class="text-[11px] font-bold text-cyan-accent/80 uppercase tracking-wider">Temperature
+                            (°C)</span>
+                        <select
+                            class="bg-navy-bg border border-[var(--border-color)] rounded px-1.5 py-0.5 text-[9px] font-bold focus:ring-0 focus:outline-none text-[var(--text-primary)]"
+                            id="node-select-temp">
+                            <option value="node-a">Node A (Upstream)</option>
+                            <option value="node-b">Node B (Downstream)</option>
+                            <option value="node-c">Node C (Midstream)</option>
+                            <option value="node-d">Node D (Bridge)</option>
+                        </select>
+                    </div>
+                    <div class="flex-1 min-h-0"><canvas id="miniChartTemp"></canvas></div>
+                </div>
+
+                <!-- Turbidity mini chart -->
+                <div class="glass-card flex flex-col h-[200px]">
+                    <div class="flex justify-between items-center mb-2 border-b border-[var(--border-color)] pb-1">
+                        <span class="text-[11px] font-bold text-cyan-accent uppercase tracking-wider">Turbidity
+                            Clarity</span>
+                        <select
+                            class="bg-navy-bg border border-[var(--border-color)] rounded px-1.5 py-0.5 text-[9px] font-bold focus:ring-0 focus:outline-none text-[var(--text-primary)]"
+                            id="node-select-turb">
+                            <option value="node-a">Node A (Upstream)</option>
+                            <option value="node-b">Node B (Downstream)</option>
+                            <option value="node-c">Node C (Midstream)</option>
+                            <option value="node-d">Node D (Bridge)</option>
+                        </select>
+                    </div>
+                    <div class="flex-1 min-h-0"><canvas id="miniChartTurb"></canvas></div>
+                </div>
+            </section>
+        </div>
+
+
+        <!-- ================= PAGE 2: LIVE TELEMETRY ================= -->
+        <div class="page-view grid grid-cols-12 gap-6 w-full hidden" id="view-sensors">
+
+            <!-- Side Controls Panel -->
+            <aside class="col-span-12 lg:col-span-3 flex flex-col gap-6">
+                <div class="glass-card">
+                    <h3
+                        class="text-xs text-light-gray uppercase tracking-wider font-extrabold border-b border-[var(--border-color)] pb-2 mb-4">
+                        Node Selection</h3>
+                    <div class="flex flex-col gap-2">
+                        <label class="text-[10px] text-light-gray uppercase font-bold tracking-wider">Active Telemetry Targets</label>
+                        <div class="flex flex-col gap-2" id="telemetry-node-checkboxes">
+                            <label class="flex items-center gap-2 text-sm text-[var(--text-primary)] cursor-pointer">
+                                <input type="checkbox" value="node-a" class="telemetry-node-cb rounded bg-navy-bg border-[var(--border-color)] text-cyan-accent focus:ring-0" checked>
+                                Node A (Upstream)
+                            </label>
+                            <label class="flex items-center gap-2 text-sm text-[var(--text-primary)] cursor-pointer">
+                                <input type="checkbox" value="node-b" class="telemetry-node-cb rounded bg-navy-bg border-[var(--border-color)] text-cyan-accent focus:ring-0" checked>
+                                Node B (Downstream)
+                            </label>
+                            <label class="flex items-center gap-2 text-sm text-[var(--text-primary)] cursor-pointer">
+                                <input type="checkbox" value="node-c" class="telemetry-node-cb rounded bg-navy-bg border-[var(--border-color)] text-cyan-accent focus:ring-0">
+                                Node C (Midstream)
+                            </label>
+                            <label class="flex items-center gap-2 text-sm text-[var(--text-primary)] cursor-pointer">
+                                <input type="checkbox" value="node-d" class="telemetry-node-cb rounded bg-navy-bg border-[var(--border-color)] text-cyan-accent focus:ring-0">
+                                Node D (Bridge)
+                            </label>
+                        </div>
+                    </div>
+                    <div class="flex items-center justify-between mt-4 pt-3 border-t border-[var(--border-color)]">
+                        <span class="text-xs text-light-gray font-semibold">Multi-Node Comparison</span>
+                        <input type="checkbox" id="compare-nodes-toggle"
+                            class="rounded bg-navy-bg border-[var(--border-color)] text-cyan-accent focus:ring-0" checked>
+                    </div>
+                </div>
+
+                <!-- Weather Status Summary -->
+                <div class="glass-card gradient-cyan">
+                    <h3
+                        class="text-xs text-light-gray uppercase tracking-wider font-extrabold border-b border-[var(--border-color)] pb-2 mb-3">
+                        Weather Mitigation</h3>
+                    <div class="flex justify-between text-xs my-2">
+                        <span class="text-light-gray">Precipitation:</span>
+                        <span id="weather-precip-val" class="font-bold text-[var(--text-primary)]">0.0 mm</span>
+                    </div>
+                    <div class="flex justify-between text-xs my-2">
+                        <span class="text-light-gray">Humidity:</span>
+                        <span id="weather-humidity-val" class="font-bold text-[var(--text-primary)]">-- %</span>
+                    </div>
+                    <div class="mt-4 p-3 bg-panel-bg/60 border border-[var(--border-color)] rounded-lg text-xs"
+                        id="mitigation-banner">
+                        <span class="font-bold text-cyan-accent block mb-1"><i class="fa-solid fa-cloud-sun"></i>
+                            Ambient Nominal</span>
+                        <p class="text-light-gray leading-relaxed text-[11px]">Normal statistical Z-score and delta-rate
+                            check bounds active for all parameters.</p>
+                    </div>
+                </div>
+
+                <!-- Active stats Checklist -->
+                <div class="glass-card">
+                    <h3
+                        class="text-xs text-light-gray uppercase tracking-wider font-extrabold border-b border-[var(--border-color)] pb-2 mb-3">
+                        Edge Live Indicators</h3>
+                    <div class="space-y-3 pt-1">
+                        <div class="flex justify-between text-xs">
+                            <span class="text-light-gray">Network Status</span>
+                            <span id="telemetry-node-status" class="text-soft-green font-bold uppercase">Online</span>
+                        </div>
+                        <div class="flex justify-between text-xs">
+                            <span class="text-light-gray">Global Uptime</span>
+                            <span id="uptime" class="font-mono text-cyan-accent">00:00:00</span>
+                        </div>
+                        <div class="flex justify-between text-xs">
+                            <span class="text-light-gray">TinyML SVM Status</span>
+                            <span class="text-soft-green font-bold">READY</span>
+                        </div>
+                        <div class="flex justify-between text-xs">
+                            <span class="text-light-gray">Sync Rate</span>
+                            <span id="node-rssi" class="font-bold text-[var(--text-primary)]">~400ms</span>
+                        </div>
+                    </div>
+                </div>
+            </aside>
+
+            <!-- Main Sensor Telemetry Cards Grid -->
+            <div class="col-span-12 lg:col-span-9 flex flex-col gap-6">
+                <!-- Multi Node Comparison Table -->
+                <div id="comparison-view-container" class="glass-card">
+                    <div class="flex justify-between items-center border-b border-[var(--border-color)] pb-2 mb-4">
+                        <h3 class="text-sm font-bold text-[var(--text-primary)] uppercase tracking-wider"><i
+                                class="fa-solid fa-right-left text-cyan-accent mr-2"></i>Multi-Node Parameter Comparison
+                            </h3>
+                        <span
+                            class="text-xs px-2 py-0.5 rounded bg-cyan-accent/15 text-cyan-accent font-extrabold uppercase tracking-wider"
+                            id="overall-trend-badge">stable</span>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left text-xs border-collapse" id="comparison-table">
+                            <thead id="comparison-table-head">
+                                <!-- Generated by app.js -->
+                            </thead>
+                            <tbody class="divide-y divide-[var(--border-color)]" id="comparison-table-body">
+                                <!-- Generated by app.js -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Grid of Sensor cards -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6" id="sensor-container">
+                    <!-- Sensor Cards injected dynamically by app.js -->
+                </div>
+            </div>
+        </div>
+
+
+        <!-- ================= PAGE 3: ANALYTICS ================= -->
+        <div class="page-view flex flex-col gap-6 w-full hidden" id="view-analytics">
+            <div class="glass-card">
+                <div
+                    class="flex flex-col md:flex-row md:items-center justify-between border-b border-[var(--border-color)] pb-3 mb-4 gap-4">
+                    <div>
+                        <h2 class="text-base font-extrabold text-[var(--text-primary)] uppercase tracking-wider">
+                            Time-Series Analytics</h2>
+                        <p class="text-xs text-light-gray mt-1">Plot parameter fluctuations, outliers, and AI trust
+                            scoring indices</p>
+                    </div>
+
+                    <div class="flex flex-wrap items-center gap-4">
+                        <div class="flex items-center gap-2">
+                            <label class="text-[10px] text-light-gray uppercase font-bold tracking-wider">Node</label>
+                            <select
+                                class="bg-navy-bg border border-[var(--border-color)] rounded-lg px-3 py-1.5 text-xs focus:outline-none text-[var(--text-primary)]"
+                                id="analytics-node-select">
+                                <option value="node-a">Node A (Upstream)</option>
+                                <option value="node-b">Node B (Downstream)</option>
+                                <option value="node-c">Node C (Midstream)</option>
+                                <option value="node-d">Node D (Bridge)</option>
+                            </select>
+                        </div>
+
+                        <div class="flex items-center gap-2">
+                            <label class="text-[10px] text-light-gray uppercase font-bold tracking-wider">Data
+                                Type</label>
+                            <select
+                                class="bg-navy-bg border border-[var(--border-color)] rounded-lg px-3 py-1.5 text-xs focus:outline-none text-[var(--text-primary)]"
+                                id="analytics-metric-select">
+                                <option value="trust">AI Trust Scores (0-100%)</option>
+                                <option value="tds">TDS (ppm)</option>
+                                <option value="ph">pH Level</option>
+                                <option value="temp">Temperature (°C)</option>
+                                <option value="turb">Turbidity (NTU)</option>
+                            </select>
+                        </div>
+
+                        <div
+                            class="flex items-center gap-2 bg-navy-bg border border-[var(--border-color)] rounded-lg px-3 py-1.5 text-xs">
+                            <input type="checkbox" id="analytics-compare-nodes"
+                                class="rounded bg-navy-bg border-[var(--border-color)] text-cyan-accent focus:ring-0">
+                            <label for="analytics-compare-nodes"
+                                class="text-[var(--text-primary)] cursor-pointer select-none">Compare All Nodes</label>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="relative h-[420px] w-full" id="analytics-chart-container">
+                    <canvas id="analyticsChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+
+        <!-- ================= PAGE 4: NODES MANAGEMENT ================= -->
+        <div class="page-view flex flex-col gap-6 w-full hidden" id="view-nodes">
+
+            <div class="glass-card flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                <div>
+                    <h2 class="text-base font-extrabold text-[var(--text-primary)] uppercase tracking-wider">Node Assets
+                        & Health Directory</h2>
+                    <p class="text-xs text-light-gray mt-1">Configure and manage active environmental telemetry
+                        deployment sites</p>
+                </div>
+                <div class="flex items-center gap-3">
+                    <select
+                        class="bg-navy-bg border border-[var(--border-color)] rounded-lg px-3 py-2 text-xs focus:ring-1 focus:ring-cyan-accent focus:outline-none text-[var(--text-primary)]"
+                        id="node-search-filter">
+                        <option value="all">Display All Nodes</option>
+                        <option value="online">Online Nodes only</option>
+                        <option value="offline">Offline Nodes only</option>
+                    </select>
+                    <button
+                        class="bg-cyan-accent hover:brightness-110 text-white font-extrabold text-xs px-4 py-2.5 rounded-lg flex items-center gap-2 transition-all shadow-sm"
+                        id="add-node-btn">
+                        <i class="fa-solid fa-circle-plus"></i> Add Node Card
+                    </button>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" id="nodes-directory-grid">
+                <!-- Dynamically built by app.js -->
+            </div>
+        </div>
+
+
+        <!-- ================= PAGE 5: EDGE CONSOLE ================= -->
+        <div class="page-view flex flex-col gap-6 w-full hidden" id="view-console">
+            <div class="glass-card flex flex-col flex-1 min-h-[480px]">
+
+                <div
+                    class="flex flex-col md:flex-row md:items-center justify-between border-b border-[var(--border-color)] pb-3 mb-4 gap-4">
+                    <div class="flex items-center gap-3">
+                        <div
+                            class="w-3.5 h-3.5 rounded-full bg-cyan-accent flex items-center justify-center text-white text-[9px] font-extrabold shadow-sm">
+                            <i class="fa-solid fa-code"></i>
+                        </div>
+                        <h2 class="text-sm font-extrabold text-[var(--text-primary)] uppercase tracking-wider">Edge
+                            Decisions Terminal Log</h2>
+                    </div>
+
+                    <div class="flex flex-wrap items-center gap-3">
+                        <div
+                            class="flex items-center border border-[var(--border-color)] rounded-lg bg-navy-bg p-0.5 text-xs">
+                            <button class="px-3 py-1 font-bold rounded-md bg-cyan-accent text-white"
+                                id="filter-all">All</button>
+                            <button class="px-3 py-1 font-bold rounded-md text-light-gray"
+                                id="filter-info">Info</button>
+                            <button class="px-3 py-1 font-bold rounded-md text-light-gray"
+                                id="filter-warn">Warn</button>
+                            <button class="px-3 py-1 font-bold rounded-md text-light-gray"
+                                id="filter-error">Error</button>
+                        </div>
+
+                        <button
+                            class="border border-[var(--border-color)] hover:border-cyan-accent hover:text-cyan-accent text-light-gray px-3 py-1.5 rounded-lg text-xs font-bold transition-all"
+                            id="clear-console-btn">
+                            <i class="fa-solid fa-trash-can mr-1.5"></i>Clear
+                        </button>
+                        <button
+                            class="border border-[var(--border-color)] hover:border-cyan-accent hover:text-cyan-accent text-light-gray px-3 py-1.5 rounded-lg text-xs font-bold transition-all"
+                            id="pause-stream-btn">
+                            <i class="fa-solid fa-pause mr-1.5"></i>Pause
+                        </button>
+                        <button
+                            class="bg-panel-bg border border-[var(--border-color)] hover:border-cyan-accent hover:text-cyan-accent text-[var(--text-primary)] px-3 py-1.5 rounded-lg text-xs font-bold transition-all shadow-sm"
+                            id="export-log-btn">
+                            <i class="fa-solid fa-file-export mr-1.5"></i>Export Log
+                        </button>
+                    </div>
+                </div>
+
+                <div class="flex-1 console-terminal" id="main-terminal">
+                    <!-- Event logs injected by app.js -->
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- Footer -->
+    <footer
+        class="bg-panel-bg border-t border-[var(--border-color)] text-center py-4 text-[10px] text-light-gray tracking-wide mt-auto">
+        <div class="max-w-[1536px] mx-auto px-6 flex flex-col md:flex-row justify-between items-center gap-2">
+            <span id="footer-text">GangaEdge &bull; Resilient IoT Water Quality Command Center &bull; IIT Roorkee</span>
+            <div class="flex gap-4 text-xs">
+                <a href="#" class="hover:text-cyan-accent">Documentation</a>
+                <a href="#" class="hover:text-cyan-accent">API Reference</a>
+                <a href="#" class="hover:text-cyan-accent">Export Dataset</a>
+            </div>
+        </div>
+    </footer>
+
+    <!-- App JavaScript Logic -->
+    <script src="app.js"></script>
+</body>
+
+</html>
