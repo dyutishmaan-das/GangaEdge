@@ -95,6 +95,7 @@ const SENSOR_CONFIGS = {
 };
 
 // Node deployment configurations
+// Nodes start OFFLINE — they come online only when real MQTT data arrives
 let NODES = {
     'node-a': {
         id: 'node-a',
@@ -102,12 +103,12 @@ let NODES = {
         station: 'ROORKEE-NORTH',
         deviceId: 'EDGE-U-0142',
         installed: '2025-10-12',
-        uptimeStart: Date.now() - 3600000 * 2.4, // ~2.4 hours ago
-        status: 'online',
+        uptimeStart: null,
+        status: 'offline',
         sensors: ['tds', 'ph', 'temp', 'turb'],
-        trustScores: { tds: 94, ph: 99, temp: 89, turb: 62 },
-        lastSeen: Date.now(),
-        rssi: -62
+        trustScores: { tds: 0, ph: 0, temp: 0, turb: 0 },
+        lastSeen: 0,
+        rssi: -90
     },
     'node-b': {
         id: 'node-b',
@@ -115,12 +116,12 @@ let NODES = {
         station: 'ROORKEE-SOUTH',
         deviceId: 'EDGE-D-0922',
         installed: '2025-10-14',
-        uptimeStart: Date.now() - 3600000 * 4.1, // ~4.1 hours ago
-        status: 'online',
+        uptimeStart: null,
+        status: 'offline',
         sensors: ['tds', 'ph', 'temp', 'turb'],
-        trustScores: { tds: 92, ph: 95, temp: 88, turb: 90 },
-        lastSeen: Date.now(),
-        rssi: -68
+        trustScores: { tds: 0, ph: 0, temp: 0, turb: 0 },
+        lastSeen: 0,
+        rssi: -90
     },
     'node-c': {
         id: 'node-c',
@@ -128,12 +129,12 @@ let NODES = {
         station: 'ROORKEE-CENTRAL',
         deviceId: 'EDGE-M-0451',
         installed: '2025-11-02',
-        uptimeStart: Date.now() - 3600000 * 1.2,
-        status: 'online',
+        uptimeStart: null,
+        status: 'offline',
         sensors: ['tds', 'ph', 'temp', 'turb'],
-        trustScores: { tds: 98, ph: 97, temp: 92, turb: 94 },
-        lastSeen: Date.now(),
-        rssi: -55
+        trustScores: { tds: 0, ph: 0, temp: 0, turb: 0 },
+        lastSeen: 0,
+        rssi: -90
     },
     'node-d': {
         id: 'node-d',
@@ -141,11 +142,11 @@ let NODES = {
         station: 'ROORKEE-BRIDGE',
         deviceId: 'EDGE-B-0711',
         installed: '2025-11-18',
-        uptimeStart: Date.now() - 3600000 * 5.5,
+        uptimeStart: null,
         status: 'offline',
         sensors: ['tds', 'ph', 'temp', 'turb'],
         trustScores: { tds: 0, ph: 0, temp: 0, turb: 0 },
-        lastSeen: Date.now() - 3600000 * 5.5,
+        lastSeen: 0,
         rssi: -90
     }
 };
@@ -603,6 +604,11 @@ function handleLivePacket(nodeId, data) {
     const node = state.nodes[nodeId];
     if (!node) return;
 
+    // Bring node online when we receive real data
+    if (node.status === 'offline') {
+        node.uptimeStart = Date.now();
+        logEvent(`[MQTT] Node ${node.name} is now ONLINE (live data received).`, 'success');
+    }
     node.status = 'online';
     node.lastSeen = Date.now();
     node.rssi = data.rssi || -60;
@@ -633,21 +639,31 @@ function handleLivePacket(nodeId, data) {
     }
 }
 
-// --- SIMULATED DATA LOOP (FALLBACK / PARALLEL SYSTEM) ---
+// --- LIVE DATA LOOP (ONLY PROCESSES NODES WITH RECENT MQTT DATA) ---
 function runSimulatedTick() {
     state.systemTick++;
     let activeFaultsCount = 0;
 
-    // Generate values for all nodes
+    // Check for nodes that have gone stale (no MQTT packet in 15s) and mark them offline
     Object.keys(state.nodes).forEach(nodeId => {
         const node = state.nodes[nodeId];
-        
-        // Skip simulated updates if node is currently live via MQTT (Node A or Node B)
-        const isLive = LIVE_MODE && (nodeId === 'node-a' || nodeId === 'node-b') && (Date.now() - node.lastSeen < 7500);
+        if (node.status === 'online' && node.lastSeen > 0 && (Date.now() - node.lastSeen > 15000)) {
+            node.status = 'offline';
+            logEvent(`[MQTT] Node ${node.name} went OFFLINE (no data for 15s).`, 'warn');
+        }
+    });
+
+    // Process values for online nodes that have recent MQTT data
+    Object.keys(state.nodes).forEach(nodeId => {
+        const node = state.nodes[nodeId];
 
         if (node.status === 'offline') {
             return;
         }
+
+        // Only process if we have recent live data (within 15 seconds)
+        const hasRecentData = node.lastSeen > 0 && (Date.now() - node.lastSeen < 15000);
+        if (!hasRecentData) return;
 
         const tickData = [];
         const sims = state.simulators[nodeId];
@@ -660,31 +676,13 @@ function runSimulatedTick() {
             let status = 'trusted';
             let actionMsg = '';
 
-            if (isLive) {
-                // If live MQTT data, use the last value pushed by MQTT
-                const hList = state.history[nodeId][sensorId];
-                const tList = state.history[nodeId][`trust_${sensorId}`];
-                raw = hList.length > 0 ? hList[hList.length - 1] : sim.config.baseline;
-                trust = tList.length > 0 ? tList[tList.length - 1] : 100;
-                filteredVal = raw; // assume pre-filtered or simple copy
-                status = trust < 50 ? 'degraded' : trust < 80 ? 'suspect' : 'trusted';
-            } else {
-                // Generate simulated values
-                raw = sim.generateValue();
-                trust = sim.trustEngine.calculateTrust(raw);
-                const res = LocalDecisionEngine.processReading(sim, raw, trust);
-                filteredVal = res.filteredVal;
-                status = res.status;
-                actionMsg = res.actionMsg;
-
-                // Push to historical data
-                state.history[nodeId][sensorId].push(raw);
-                state.history[nodeId][`trust_${sensorId}`].push(trust);
-                if (state.history[nodeId][sensorId].length > historyLength) {
-                    state.history[nodeId][sensorId].shift();
-                    state.history[nodeId][`trust_${sensorId}`].shift();
-                }
-            }
+            // Use the last value pushed by MQTT (no simulation)
+            const hList = state.history[nodeId][sensorId];
+            const tList = state.history[nodeId][`trust_${sensorId}`];
+            raw = hList.length > 0 ? hList[hList.length - 1] : sim.config.baseline;
+            trust = tList.length > 0 ? tList[tList.length - 1] : 100;
+            filteredVal = raw;
+            status = trust < 50 ? 'degraded' : trust < 80 ? 'suspect' : 'trusted';
 
             node.trustScores[sensorId] = trust;
             if (status !== 'trusted') activeFaultsCount++;
@@ -1453,8 +1451,7 @@ function renderNodesDirectory() {
         if (filter === 'offline' && node.status !== 'offline') return;
 
         const card = document.createElement('div');
-        card.className = `glass-card cursor-pointer group hover:scale-[1.01] flex flex-col justify-between border-l-4 ${node.status === 'online' ? 'border-l-soft-green' : 'border-l-gray-600'}`;
-        card.setAttribute('onclick', `selectAndJumpToTelemetry('${nodeId}')`);
+        card.className = `glass-card group hover:scale-[1.01] flex flex-col justify-between border-l-4 ${node.status === 'online' ? 'border-l-soft-green' : 'border-l-gray-600'}`;
 
         // Compute average trust
         let avgTrust = 0;
@@ -1483,19 +1480,28 @@ function renderNodesDirectory() {
         });
 
         // Compute active time
-        const activeMins = Math.round((Date.now() - node.uptimeStart) / 60000);
-        const uptimeStr = node.status === 'online' ? `${Math.floor(activeMins/60)}h ${activeMins%60}m` : 'Unreachable';
+        let uptimeStr = 'Unreachable';
+        if (node.status === 'online' && node.uptimeStart) {
+            const activeMins = Math.round((Date.now() - node.uptimeStart) / 60000);
+            uptimeStr = `${Math.floor(activeMins/60)}h ${activeMins%60}m`;
+        }
 
         card.innerHTML = `
             <div>
                 <div class="flex justify-between items-start mb-2">
-                    <div>
+                    <div class="cursor-pointer" onclick="selectAndJumpToTelemetry('${nodeId}')">
                         <h4 class="font-bold text-white group-hover:text-cyan-accent transition-colors">${node.name}</h4>
                         <span class="text-[9px] text-light-gray uppercase tracking-widest block mt-0.5">ID: ${node.deviceId} &bull; ${node.station}</span>
                     </div>
-                    <span class="text-[9px] font-extrabold uppercase px-2 py-0.5 rounded ${node.status === 'online' ? 'bg-soft-green/20 text-soft-green' : 'bg-gray-600/20 text-gray-500'}">
-                        ${node.status.toUpperCase()}
-                    </span>
+                    <div class="flex items-center gap-2">
+                        <span class="text-[9px] font-extrabold uppercase px-2 py-0.5 rounded ${node.status === 'online' ? 'bg-soft-green/20 text-soft-green' : 'bg-gray-600/20 text-gray-500'}">
+                            ${node.status.toUpperCase()}
+                        </span>
+                        <button class="w-7 h-7 rounded-full bg-red-500/10 border border-red-500/30 flex items-center justify-center text-red-400 hover:bg-red-500/25 hover:text-red-300 transition-all" 
+                            onclick="event.stopPropagation(); deleteNode('${nodeId}')" title="Remove Node">
+                            <i class="fa-solid fa-trash-can text-[10px]"></i>
+                        </button>
+                    </div>
                 </div>
 
                 <div class="grid grid-cols-2 gap-2 my-4 pt-3 border-t border-gray-700/20">
@@ -1521,7 +1527,12 @@ function renderNodesDirectory() {
                 <span class="text-[10px] text-light-gray font-bold">NODE TRUST SCORE</span>
                 <span class="font-mono font-extrabold text-sm ${avgTrust >= 80 ? 'text-soft-green' : avgTrust >= 50 ? 'text-yellow-500' : 'text-magenta-accent'}">${avgTrust}%</span>
             </div>
-            ` : ''}
+            ` : `
+            <div class="flex items-center justify-between mt-4 bg-navy-bg/30 p-2 rounded-lg border border-[var(--border-color)]">
+                <span class="text-[10px] text-light-gray font-bold">STATUS</span>
+                <span class="font-mono font-extrabold text-sm text-gray-500">WAITING FOR DATA</span>
+            </div>
+            `}
         `;
 
         grid.appendChild(card);
@@ -1537,6 +1548,51 @@ window.selectAndJumpToTelemetry = function(nodeId) {
     // Trigger SPA Routing to Telemetry
     const btn = document.querySelector('[data-page="view-sensors"]');
     if (btn) btn.click();
+};
+
+// Delete node and clean up all associated state
+window.deleteNode = function(nodeId) {
+    const node = state.nodes[nodeId];
+    if (!node) return;
+
+    const nodeName = node.name;
+    
+    // Confirm deletion
+    if (!confirm(`Remove ${nodeName} from the dashboard?\n\nThis will delete all its telemetry history and configuration.`)) {
+        return;
+    }
+
+    // Remove from all state objects
+    delete state.nodes[nodeId];
+    delete NODES[nodeId];
+    delete state.simulators[nodeId];
+    delete state.history[nodeId];
+    delete NODE_OFFSETS[nodeId];
+
+    // If deleted node was the selected node, switch to first available
+    if (state.selectedNode === nodeId) {
+        const remaining = Object.keys(state.nodes);
+        state.selectedNode = remaining.length > 0 ? remaining[0] : null;
+    }
+
+    // Remove checkbox from telemetry sidebar
+    const cb = document.querySelector(`.telemetry-node-cb[value="${nodeId}"]`);
+    if (cb) {
+        const label = cb.closest('label');
+        if (label) label.remove();
+    }
+
+    logEvent(`[ASSETS MANAGER] ✗ Node ${nodeName} removed from deployment roster.`, 'warn');
+    
+    // Re-render affected views
+    renderNodesDirectory();
+    populateAllDropdowns();
+    updateStatsDOM();
+    updateOverviewPage();
+    if (state.activePage === 'view-sensors') {
+        renderSensorCards();
+        updateSensorsPage();
+    }
 };
 
 // Add new node dynamically
@@ -1814,18 +1870,12 @@ function initNodeState(nodeId) {
         trust_tds: [], trust_ph: [], trust_temp: [], trust_turb: []
     };
 
-    // Pre-seed simulator histories (30 entries)
+    // Initialize simulators without pre-seeding fake data
+    // Real data comes from MQTT or Google Sheets only
     Object.keys(SENSOR_CONFIGS).forEach(s => {
-        const offset = NODE_OFFSETS[nodeId][s] || 0;
+        const offset = (NODE_OFFSETS[nodeId] && NODE_OFFSETS[nodeId][s]) || 0;
         state.simulators[nodeId][s] = new SensorSimulator(SENSOR_CONFIGS[s], offset);
-        
-        // Seed arrays
-        for (let i = 0; i < historyLength; i++) {
-            const raw = state.simulators[nodeId][s].generateValue();
-            state.history[nodeId][s].push(raw);
-            state.history[nodeId][`trust_${s}`].push(100);
-            state.simulators[nodeId][s].filteredHistory.push(raw);
-        }
+        // No pre-seeding — arrays start empty, filled by live MQTT or Google Sheets sync
     });
 }
 
