@@ -1,8 +1,8 @@
 /* ==========================================================================
-   IoT-Edge - Resilient IoT Edge & Trust Scoring JS Engine
+   GangaEdge Professional Dashboard Application Logic
    ========================================================================== */
 
-// --- CONFIGURATION ---
+// --- DUAL-NODE & EXTRA SENSOR CONFIGURATION ---
 const CONFIG = {
     projectName: 'GangaEdge',
     projectTitle: 'Ganga Canal Water Quality Monitoring',
@@ -10,13 +10,9 @@ const CONFIG = {
     affiliation: 'IIT Roorkee Summer Internship Project'
 };
 
-// --- LIVE MODE CONFIGURATION ---
-// Set to true to receive REAL data from ESP32 via HiveMQ Cloud
-// Set to false to use the built-in simulator for demo/testing
-const LIVE_MODE = true;
+const LIVE_MODE = true; // Subscribes to HiveMQ Cloud
 
 const MQTT_CONFIG = {
-    // HiveMQ Cloud WebSocket endpoint (port 8884 for wss://)
     brokerUrl: 'wss://c27fa0e9f196413ea7ea84e3cb6b1a3d.s1.eu.hivemq.cloud:8884/mqtt',
     username: 'Ganga_Node_A',
     password: 'Luci@2112@#',
@@ -24,111 +20,174 @@ const MQTT_CONFIG = {
     clientId: 'gangaedge-dashboard-' + Math.random().toString(16).substr(2, 8)
 };
 
-// --- GLOBAL STATE ---
-let isCloudOnline = true;
-let isSyncing = false;
-let weatherContext = 'clear';
-let systemTick = 0;
-const historyLength = 30; // Chart history seconds
+const G_SHEETS_URL = 'https://script.google.com/macros/s/AKfycbzD4xEIK1hTkBQQecZRSRx1iVYQGjxs3Fmh8o9_YcnEzEgcYwQQvIALr8BqR55RGBQI/exec';
 
-let localQueue = [];
-let cloudDb = [];
-let sensors = [];
-let trustChartInstance = null;
-let mqttClient = null;  // Live MQTT client instance
-
-let lastSeenNodeA = 0;
-let lastSeenNodeB = 0;
-let nodeCheckInterval = null;
-
-// --- SENSOR CONFIGURATION ---
-// Calibrated to actual ESP32-WROOM-32E prototype hardware sensors
-// Reference ranges: WHO drinking water guidelines & FAO irrigation water standards
-const SENSOR_CONFIGS = [
-    {
+// --- INITIAL SENSOR PARAMS CONFIG ---
+const SENSOR_CONFIGS = {
+    tds: {
         id: 'tds',
         name: 'TDS',
         fullName: 'Total Dissolved Solids',
         unit: ' ppm',
-        // Normal irrigation water: 200–500 ppm | Drinking: 50–300 ppm | WHO limit: 600 ppm
         baseline: 320.0,
-        amplitude: 45.0,
-        noiseStd: 8.0,
-        // TDS changes slowly (dissolution/dilution process)
-        maxExpectedDelta: 25.0,
+        amplitude: 30.0,
+        noiseStd: 5.0,
+        maxExpectedDelta: 20.0,
         minBound: 0.0,
-        maxBound: 1200.0,   // >1200 ppm: dangerously saline for crops
+        maxBound: 1000.0,
         safeMin: 50.0,
         safeMax: 600.0,
         icon: 'fa-flask',
-        colorHsl: 'hsl(217, 91%, 60%)',
-        colorRgba: 'rgba(59, 130, 246, 0.08)'
+        color: 'rgba(6, 182, 212, 1)',
+        cardClass: 'gradient-cyan'
     },
-    {
+    ph: {
         id: 'ph',
         name: 'pH',
         fullName: 'Acidity / Alkalinity',
         unit: ' pH',
-        // Ideal irrigation: 6.5–7.5 | Drinking water: 6.5–8.5 | WHO guideline
-        baseline: 7.1,
-        amplitude: 0.25,
-        noiseStd: 0.04,
-        // pH in water bodies changes slowly (buffering capacity)
-        maxExpectedDelta: 0.15,
-        minBound: 3.0,      // Below 3: corrosive acid
-        maxBound: 11.0,     // Above 11: caustic alkali
+        baseline: 7.2,
+        amplitude: 0.2,
+        noiseStd: 0.03,
+        maxExpectedDelta: 0.1,
+        minBound: 3.0,
+        maxBound: 11.0,
         safeMin: 6.5,
         safeMax: 8.5,
         icon: 'fa-vial',
-        colorHsl: 'hsl(152, 76%, 50%)',
-        colorRgba: 'rgba(16, 185, 129, 0.08)'
+        color: 'rgba(20, 184, 166, 1)',
+        cardClass: 'gradient-green'
     },
-    {
+    temp: {
         id: 'temp',
         name: 'Temperature',
         fullName: 'Water Temperature (DS18B20)',
         unit: '°C',
-        // Typical surface water / irrigation channel temperature
         baseline: 26.5,
-        amplitude: 2.8,
-        noiseStd: 0.12,
-        // DS18B20 resolution 0.0625°C — water temp changes slowly
-        maxExpectedDelta: 0.8,
-        minBound: 0.0,      // Freezing point
-        maxBound: 50.0,     // Above 50°C: sensor damage threshold
-        safeMin: 5.0,
+        amplitude: 2.0,
+        noiseStd: 0.1,
+        maxExpectedDelta: 0.5,
+        minBound: 0.0,
+        maxBound: 50.0,
+        safeMin: 10.0,
         safeMax: 35.0,
         icon: 'fa-thermometer-half',
-        colorHsl: 'hsl(37, 98%, 53%)',
-        colorRgba: 'rgba(245, 158, 11, 0.08)'
+        color: 'rgba(56, 189, 248, 1)',
+        cardClass: 'gradient-cyan'
     },
-    {
+    turb: {
         id: 'turb',
         name: 'Turbidity',
         fullName: 'Water Clarity (Turbidity)',
         unit: ' NTU',
-        // WHO drinking water guideline: <1 NTU | Irrigation acceptable: <100 NTU
         baseline: 4.5,
-        amplitude: 1.8,
-        noiseStd: 0.5,
-        // Turbidity can spike quickly after rainfall or sediment disturbance
-        maxExpectedDelta: 8.0,
+        amplitude: 1.5,
+        noiseStd: 0.4,
+        maxExpectedDelta: 5.0,
         minBound: 0.0,
-        maxBound: 500.0,    // Above 500 NTU: visibly muddy, sensors saturate
+        maxBound: 400.0,
         safeMin: 0.0,
-        safeMax: 100.0,
+        safeMax: 80.0,
         icon: 'fa-water',
-        colorHsl: 'hsl(280, 85%, 60%)',
-        colorRgba: 'rgba(168, 85, 247, 0.08)'
+        color: 'rgba(167, 139, 250, 1)',
+        cardClass: 'gradient-cyan'
     }
-];
+};
+
+// Node deployment configurations
+let NODES = {
+    'node-a': {
+        id: 'node-a',
+        name: 'Node A: Upstream',
+        station: 'ROORKEE-NORTH',
+        deviceId: 'EDGE-U-0142',
+        installed: '2025-10-12',
+        uptimeStart: Date.now() - 3600000 * 2.4, // ~2.4 hours ago
+        status: 'online',
+        sensors: ['tds', 'ph', 'temp', 'turb'],
+        trustScores: { tds: 94, ph: 99, temp: 89, turb: 62 },
+        lastSeen: Date.now(),
+        rssi: -62
+    },
+    'node-b': {
+        id: 'node-b',
+        name: 'Node B: Downstream',
+        station: 'ROORKEE-SOUTH',
+        deviceId: 'EDGE-D-0922',
+        installed: '2025-10-14',
+        uptimeStart: Date.now() - 3600000 * 4.1, // ~4.1 hours ago
+        status: 'online',
+        sensors: ['tds', 'ph', 'temp', 'turb'],
+        trustScores: { tds: 92, ph: 95, temp: 88, turb: 90 },
+        lastSeen: Date.now(),
+        rssi: -68
+    },
+    'node-c': {
+        id: 'node-c',
+        name: 'Node C: Midstream',
+        station: 'ROORKEE-CENTRAL',
+        deviceId: 'EDGE-M-0451',
+        installed: '2025-11-02',
+        uptimeStart: Date.now() - 3600000 * 1.2,
+        status: 'online',
+        sensors: ['tds', 'ph', 'temp', 'turb'],
+        trustScores: { tds: 98, ph: 97, temp: 92, turb: 94 },
+        lastSeen: Date.now(),
+        rssi: -55
+    },
+    'node-d': {
+        id: 'node-d',
+        name: 'Node D: Bridge Site',
+        station: 'ROORKEE-BRIDGE',
+        deviceId: 'EDGE-B-0711',
+        installed: '2025-11-18',
+        uptimeStart: Date.now() - 3600000 * 5.5,
+        status: 'offline',
+        sensors: ['tds', 'ph', 'temp', 'turb'],
+        trustScores: { tds: 0, ph: 0, temp: 0, turb: 0 },
+        lastSeen: Date.now() - 3600000 * 5.5,
+        rssi: -90
+    }
+};
+
+// Node offsets for Downstream Simulation
+const NODE_OFFSETS = {
+    'node-a': { tds: 0, ph: 0, temp: 0, turb: 0 },
+    'node-b': { tds: +38.0, ph: -0.12, temp: +0.4, turb: +18.0 },
+    'node-c': { tds: +15.0, ph: -0.05, temp: +0.2, turb: +8.0 },
+    'node-d': { tds: +45.0, ph: -0.18, temp: +0.6, turb: +25.0 }
+};
+
+// --- GLOBAL APPLICATION STATE ---
+const state = {
+    nodes: NODES,
+    simulators: {}, // node_id -> { tds, ph, temp, turb }
+    history: {}, // node_id -> { tds:[], ph:[], temp:[], turb:[], trust_tds:[],... }
+    selectedNode: 'node-a',
+    isCloudOnline: true,
+    isSyncing: false,
+    weatherContext: 'clear',
+    weatherData: { temp: 29.4, wind: 8.1, precip: 0.0, humidity: 78 },
+    localQueue: [],
+    cloudDb: [],
+    systemTick: 0,
+    activePage: 'view-overview',
+    logFilter: 'all',
+    logPaused: false,
+    comparisonEnabled: false,
+    logs: [] // [{time, msg, type}]
+};
+
+const historyLength = 30;
+let mqttClient = null;
 
 // --- SENSOR SIMULATOR CLASS ---
 class SensorSimulator {
-    constructor(config) {
+    constructor(config, offset = 0) {
         this.config = config;
+        this.offset = offset;
         this.currentFault = 'normal';
-        this.tickCounter = 0;
+        this.tickCounter = Math.floor(Math.random() * 100);
         this.driftAccumulator = 0;
         this.stuckValue = null;
         this.history = [];
@@ -140,52 +199,45 @@ class SensorSimulator {
         this.tickCounter++;
         let rawVal = 0;
 
-        // Base sine wave fluctuation representing normal diurnal/cyclical operations
-        const sinVal = this.config.baseline + Math.sin(this.tickCounter * 0.05) * this.config.amplitude;
-        
-        // Add default normal thermal/electrical noise
+        // Sine wave diurnal operation + offset
+        const sinVal = this.config.baseline + this.offset + Math.sin(this.tickCounter * 0.06) * this.config.amplitude;
         const normalNoise = (Math.random() - 0.5) * 2 * this.config.noiseStd;
         rawVal = sinVal + normalNoise;
 
-        // Apply Injected Fault Types
+        // Weather impact on turbidity
+        if (this.config.id === 'turb' && state.weatherContext === 'rain') {
+            rawVal += 15.0 + Math.random() * 8.0; // natural mud churn mud spikes
+        }
+
+        // Apply Injected Faults
         switch (this.currentFault) {
             case 'normal':
                 this.driftAccumulator = 0;
                 this.stuckValue = null;
                 break;
-                
             case 'drift':
-                // Steady linear deterioration (e.g. sensor decalibration or build-up)
-                this.driftAccumulator += this.config.maxExpectedDelta * 0.5;
+                this.driftAccumulator += this.config.maxExpectedDelta * 0.35;
                 rawVal += this.driftAccumulator;
                 break;
-                
             case 'spike':
-                // Single huge transient pulse (e.g., electrical surge or physical impact)
-                // Randomly occurs 30% of the time, otherwise remains normal
-                if (Math.random() < 0.3) {
-                    rawVal += this.config.amplitude * 4;
+                if (Math.random() < 0.25) {
+                    rawVal += this.config.amplitude * 4.5;
                 }
                 this.stuckValue = null;
                 break;
-                
             case 'stuck':
-                // Sensor gets frozen (e.g., frozen ADC, lockup, dead communication)
                 if (this.stuckValue === null) {
                     this.stuckValue = rawVal;
                 }
                 rawVal = this.stuckValue;
                 break;
-                
             case 'noise':
-                // Highly erratic readings (e.g. loose connection, extreme EMF)
-                const extremeNoise = (Math.random() - 0.5) * 2 * (this.config.noiseStd * 10);
-                rawVal = sinVal + extremeNoise;
+                const extNoise = (Math.random() - 0.5) * 2 * (this.config.noiseStd * 12);
+                rawVal = sinVal + extNoise;
                 this.stuckValue = null;
                 break;
         }
 
-        // Store history (max 50 points)
         this.history.push(rawVal);
         if (this.history.length > 50) this.history.shift();
 
@@ -194,7 +246,6 @@ class SensorSimulator {
 
     setFault(faultName) {
         this.currentFault = faultName;
-        // Reset counters when switching faults
         this.driftAccumulator = 0;
         this.stuckValue = null;
     }
@@ -215,20 +266,19 @@ class TrustScoringEngine {
         this.window.push(rawVal);
         if (this.window.length > this.windowSize) this.window.shift();
 
-        // If not enough data, trust is high until calibrated
         if (this.window.length < 5) {
             this.lastRaw = rawVal;
             return 100;
         }
 
-        // Factor 1: Hard Bounds Checks
+        // 1. Hard Bounds Check
         if (rawVal < this.config.minBound || rawVal > this.config.maxBound) {
             this.rollingTrust = 0.0;
             this.lastRaw = rawVal;
-            return 0; // Immediate failure
+            return 0;
         }
 
-        // Factor 2: Rolling Statistics & Z-Score
+        // 2. Rolling Z-Score Anomaly detection
         const mean = this.window.reduce((a, b) => a + b, 0) / this.window.length;
         const variance = this.window.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / this.window.length;
         const stdDev = Math.sqrt(variance);
@@ -237,37 +287,33 @@ class TrustScoringEngine {
         if (stdDev > 0.001) {
             let zScore = Math.abs(rawVal - mean) / stdDev;
             
-            // Weather mitigation: Relax Z-score statistical bounds during rain for turbidity
-            if (this.config.id === 'turb' && typeof weatherContext !== 'undefined' && weatherContext === 'rain') {
-                zScore = zScore / 2.5; // significantly reduce Z-score penalty
+            // Weather mitigation check: Relax bounds if monsoon active
+            if (this.config.id === 'turb' && state.weatherContext === 'rain') {
+                zScore = zScore / 3.0; // Reduce Z-score statistical penalty during rain
             }
 
-            // Z-score thresholding
             if (zScore > 2.0) {
-                // Decay trust score linearly between Z=2 (100% trust) and Z=4.5 (0% trust)
                 zScoreTrust = Math.max(0, 100 - ((zScore - 2.0) / 2.5) * 100);
             }
         }
 
-        // Factor 3: Rate of Change (Delta) Check
+        // 3. Rate of Change (Delta) Check
         let deltaTrust = 100;
         if (this.lastRaw !== null) {
             const delta = Math.abs(rawVal - this.lastRaw);
             let maxExpected = this.config.maxExpectedDelta;
 
-            // Weather mitigation: Allow 4x faster rate of change for turbidity during rain
-            if (this.config.id === 'turb' && typeof weatherContext !== 'undefined' && weatherContext === 'rain') {
-                maxExpected = maxExpected * 4.0;
+            if (this.config.id === 'turb' && state.weatherContext === 'rain') {
+                maxExpected = maxExpected * 4.5;
             }
 
             if (delta > maxExpected) {
-                // Decay trust based on how much it exceeds the max allowed delta
                 const excess = delta / maxExpected;
-                deltaTrust = Math.max(0, 100 - (excess - 1.0) * 80);
+                deltaTrust = Math.max(0, 100 - (excess - 1.0) * 75);
             }
         }
 
-        // Factor 4: Stuck Value Check (Zero variance over time)
+        // 4. Stuck Value Check
         let stuckTrust = 100;
         if (this.lastRaw !== null && Math.abs(rawVal - this.lastRaw) < 0.0001) {
             this.consecutiveIdentical++;
@@ -275,26 +321,20 @@ class TrustScoringEngine {
             this.consecutiveIdentical = 0;
         }
 
-        // If stuck for more than 5 consecutive ticks, start dropping trust quickly
-        if (this.consecutiveIdentical >= 6) {
-            stuckTrust = Math.max(0, 100 - (this.consecutiveIdentical - 5) * 20);
+        if (this.consecutiveIdentical >= 5) {
+            stuckTrust = Math.max(0, 100 - (this.consecutiveIdentical - 4) * 25);
         }
 
-        // Combine Factors into a raw weighted score
-        // 40% Z-score statistical alignment, 30% rate-of-change, 30% stuck/frozen checking
+        // Weighted Trust calculation
         const rawScore = (zScoreTrust * 0.40) + (deltaTrust * 0.30) + (stuckTrust * 0.30);
 
-        // Exponential smoothing to prevent sudden flickering, but allow fast decay
-        let decayAlpha = rawScore < this.rollingTrust ? 0.6 : 0.25; // Decays faster than it recovers
-
-        // Weather mitigation: Slow down decay rate during rain for turbidity
-        if (this.config.id === 'turb' && typeof weatherContext !== 'undefined' && weatherContext === 'rain') {
-            decayAlpha = rawScore < this.rollingTrust ? 0.20 : 0.25;
+        // Alpha decay filters
+        let decayAlpha = rawScore < this.rollingTrust ? 0.55 : 0.25;
+        if (this.config.id === 'turb' && state.weatherContext === 'rain') {
+            decayAlpha = rawScore < this.rollingTrust ? 0.18 : 0.25; // slower trust drop in rains
         }
 
         this.rollingTrust = (decayAlpha * rawScore) + ((1 - decayAlpha) * this.rollingTrust);
-
-        // Cap trust bounds
         this.rollingTrust = Math.max(0, Math.min(100, this.rollingTrust));
 
         this.lastRaw = rawVal;
@@ -302,7 +342,7 @@ class TrustScoringEngine {
     }
 }
 
-// --- LOCAL DECISION ENGINE ---
+// --- LOCAL DECISION DECISION AVOIDANCE ENGINE ---
 class LocalDecisionEngine {
     static processReading(sensor, rawVal, trustScore) {
         let status = 'trusted';
@@ -312,25 +352,21 @@ class LocalDecisionEngine {
         if (trustScore >= 80) {
             status = 'trusted';
             filteredVal = rawVal;
-        } 
-        else if (trustScore >= 50) {
+        } else if (trustScore >= 50) {
             status = 'suspect';
-            // Smooth reading: Apply exponential moving average to filter out high noise
             const prevFiltered = sensor.filteredHistory.length > 0 ? sensor.filteredHistory[sensor.filteredHistory.length - 1] : rawVal;
-            filteredVal = (0.4 * rawVal) + (0.6 * prevFiltered);
-            actionMsg = `[WARNING] ${sensor.config.name} trust degraded to ${trustScore}%. Applying EMA noise filter.`;
-        } 
-        else {
+            filteredVal = (0.35 * rawVal) + (0.65 * prevFiltered); // EMA filter
+            actionMsg = `[WARNING] ${sensor.config.name} trust degraded to ${trustScore}%. Applying noise filter.`;
+        } else {
             status = 'degraded';
-            // Critical degradation: Decouple sensor and inject forecasted backup value
-            // Calculated as the average of the last 5 trusted readings (or baseline if none exist)
-            const trustedReadings = sensor.filteredHistory.slice(-5);
-            if (trustedReadings.length > 0) {
-                filteredVal = trustedReadings.reduce((a, b) => a + b, 0) / trustedReadings.length;
+            // decoupling fallback forecast
+            const trusted = sensor.filteredHistory.slice(-6);
+            if (trusted.length > 0) {
+                filteredVal = trusted.reduce((a, b) => a + b, 0) / trusted.length;
             } else {
-                filteredVal = sensor.config.baseline;
+                filteredVal = sensor.config.baseline + sensor.offset;
             }
-            actionMsg = `[CRITICAL] ${sensor.config.name} trust score at ${trustScore}%! DECOUPLING sensor. Injecting local fallback: ${filteredVal.toFixed(2)}${sensor.config.unit}.`;
+            actionMsg = `[CRITICAL] Anomaly detected on ${sensor.config.name}! Decoupling sensor. Injecting fallback: ${filteredVal.toFixed(1)}${sensor.config.unit}.`;
         }
 
         sensor.filteredHistory.push(filteredVal);
@@ -340,791 +376,696 @@ class LocalDecisionEngine {
     }
 }
 
-// --- WEATHER INTEGRATION ---
-function getWeatherInfo(code) {
-    if (code === 0) return { icon: '☀️', desc: 'Clear Sky' };
-    if ([1, 2, 3].includes(code)) return { icon: '⛅', desc: 'Partly Cloudy' };
-    if ([45, 48].includes(code)) return { icon: '🌫️', desc: 'Foggy' };
-    if ([51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82].includes(code)) return { icon: '🌧️', desc: 'Rainy' };
-    if ([71, 73, 75, 77, 85, 86].includes(code)) return { icon: '❄️', desc: 'Snowy' };
-    if ([95, 96, 99].includes(code)) return { icon: '⛈️', desc: 'Thunderstorm' };
-    return { icon: '⛅', desc: 'Cloudy' };
+// --- WEATHER RETRIEVAL (OPEN-METEO) ---
+async function fetchWeather() {
+    const url = "https://api.open-meteo.com/v1/forecast?latitude=29.8543&longitude=77.8880&current=temperature_2m,precipitation,rain,weathercode,windspeed_10m,relative_humidity_2m&timezone=Asia%2FKolkata";
+    try {
+        const res = await fetch(url);
+        if (!res.ok) throw new Error("HTTP Status " + res.status);
+        const data = await res.json();
+        
+        if (data && data.current) {
+            const cur = data.current;
+            state.weatherData.temp = cur.temperature_2m;
+            state.weatherData.wind = cur.windspeed_10m;
+            state.weatherData.precip = cur.precipitation;
+            state.weatherData.humidity = cur.relative_humidity_2m;
+            
+            // WMO code checking for Rain
+            const code = cur.weathercode;
+            const isRaining = [51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82, 95, 96, 99].includes(code);
+            
+            if (isRaining || cur.precipitation > 0.5) {
+                state.weatherContext = 'rain';
+            } else {
+                state.weatherContext = 'clear';
+            }
+            updateWeatherUI();
+        }
+    } catch (err) {
+        logEvent(`[WEATHER ERROR] Failed to fetch weather API: ${err.message}`, 'system');
+    }
 }
 
-async function fetchWeather() {
-    const url = "https://api.open-meteo.com/v1/forecast?latitude=29.8543&longitude=77.8880&current=temperature_2m,precipitation,rain,weathercode,windspeed_10m&timezone=Asia%2FKolkata";
+function updateWeatherUI() {
+    const iconEl = document.getElementById('weather-icon');
+    const tempEl = document.getElementById('weather-temp');
+    const windEl = document.getElementById('weather-wind');
+    const rainEl = document.getElementById('weather-rain');
+    const badgeEl = document.getElementById('weather-badge');
+    const precipValEl = document.getElementById('weather-precip-val');
+    const humidityValEl = document.getElementById('weather-humidity-val');
+    const alertsIndicator = document.getElementById('alerts-indicator');
+    const alertsTooltip = document.getElementById('alerts-tooltip');
+
+    const tempStr = `${state.weatherData.temp.toFixed(1)}°C`;
+    const windStr = `${state.weatherData.wind.toFixed(1)} km/h`;
+    const rainStr = `${state.weatherData.precip.toFixed(1)} mm`;
+
+    if (iconEl) iconEl.innerText = state.weatherContext === 'rain' ? '🌧️' : '☀️';
+    if (tempEl) tempEl.innerText = tempStr;
+    if (windEl) windEl.innerText = windStr;
+    if (rainEl) rainEl.innerText = rainStr;
+    if (precipValEl) precipValEl.innerText = rainStr;
+    if (humidityValEl) humidityValEl.innerText = `${state.weatherData.humidity}%`;
+
+    const badge = document.getElementById('weather-badge');
+    const banner = document.getElementById('mitigation-banner');
+
+    if (state.weatherContext === 'rain') {
+        if (badge) {
+            badge.innerText = 'MONSOON ACTIVE';
+            badge.className = 'ml-1 text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-red-500/15 text-magenta-accent';
+        }
+        if (banner) {
+            banner.innerHTML = `
+                <span class="font-bold text-red-400 block mb-1"><i class="fa-solid fa-cloud-showers-heavy text-magenta-accent animate-bounce"></i> Monsoon Mitigated</span>
+                <p class="text-light-gray leading-relaxed text-[11px]">Rain detected. Turbidity SVM thresholds expanded +15% and decay rate reduced to prevent natural mud false alarms.</p>
+            `;
+            banner.className = 'mt-4 p-3 bg-slate-800/60 border border-red-500/30 rounded-lg text-xs';
+        }
+        if (alertsIndicator) alertsIndicator.classList.remove('hidden');
+        if (alertsTooltip) {
+            alertsTooltip.innerText = `WEATHER ALERT: Rain detected (${rainStr}). Turbidity thresholds relaxed.`;
+            document.getElementById('alerts-btn').classList.add('bell-pulse');
+        }
+    } else {
+        if (badge) {
+            badge.innerText = 'CLEAR';
+            badge.className = 'ml-1 text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-emerald-500/15 text-soft-green';
+        }
+        if (banner) {
+            banner.innerHTML = `
+                <span class="font-bold text-blue-400 block mb-1"><i class="fa-solid fa-cloud-sun"></i> Ambient Nominal</span>
+                <p class="text-light-gray leading-relaxed text-[11px]">Normal statistical Z-score and delta-rate check bounds active for all parameters.</p>
+            `;
+            banner.className = 'mt-4 p-3 bg-panel-bg/60 border border-gray-700/30 rounded-lg text-xs';
+        }
+        if (alertsIndicator) alertsIndicator.classList.add('hidden');
+        if (alertsTooltip) {
+            alertsTooltip.innerText = 'System Status: Nominal. Normal turbidity thresholds active.';
+            document.getElementById('alerts-btn').classList.remove('bell-pulse');
+        }
+    }
+}
+
+// --- GOOGLE SHEETS TELEMETRY DATABASE FETCH ---
+async function fetchGoogleSheetsHistory() {
+    logEvent('[SYSTEM] Fetching historical telemetry records from Google Sheets database...', 'info');
     try {
-        const response = await fetch(url);
+        const response = await fetch(G_SHEETS_URL);
         if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
         const data = await response.json();
         
-        if (data && data.current) {
-            const current = data.current;
-            const temp = current.temperature_2m;
-            const precip = current.precipitation;
-            const rain = current.rain;
-            const code = current.weathercode;
-            const wind = current.windspeed_10m;
+        if (Array.isArray(data) && data.length > 0) {
+            logEvent(`[SYSTEM] Loaded ${data.length} historical records from Google Sheets.`, 'success');
             
-            // Map weathercode to WMO description
-            const info = getWeatherInfo(code);
-            
-            // Update UI elements
-            document.getElementById('weather-icon').innerText = info.icon;
-            document.getElementById('weather-temp').innerText = temp.toFixed(1);
-            document.getElementById('weather-precipitation').innerText = `${precip.toFixed(1)} mm`;
-            document.getElementById('weather-rain').innerText = `${rain.toFixed(1)} mm`;
-            document.getElementById('weather-wind').innerText = `${wind.toFixed(1)} km/h`;
-            
-            // Check weather context: rain > 0.5mm OR precipitation > 1.0mm
-            if (rain > 0.5 || precip > 1.0) {
-                weatherContext = 'rain';
-                const badge = document.getElementById('weather-badge');
-                if (badge) {
-                    badge.innerText = 'MONSOON ACTIVE';
-                    badge.className = 'badge red';
-                }
+            // Clear current simulator histories for all nodes before seeding real data
+            Object.keys(state.nodes).forEach(nodeId => {
+                state.history[nodeId] = {
+                    tds: [], ph: [], temp: [], turb: [],
+                    trust_tds: [], trust_ph: [], trust_temp: [], trust_turb: []
+                };
+            });
+
+            data.forEach(row => {
+                const device = row["Device"] || "";
+                let nodeId = "node-a"; // Fallback to Node A
                 
-                const banner = document.getElementById('weather-banner-turb');
-                if (banner) banner.style.display = 'flex';
-                
-                appendTerminal(`[WEATHER ALERT] Rain detected in Roorkee (${rain.toFixed(1)} mm). Relaxing turbidity anomaly thresholds.`, 'info');
-            } else {
-                weatherContext = 'clear';
-                const badge = document.getElementById('weather-badge');
-                if (badge) {
-                    badge.innerText = 'CLEAR';
-                    badge.className = 'badge green';
+                if (device.toLowerCase().includes("node-b") || device.toLowerCase().includes("node-b")) {
+                    nodeId = "node-b";
+                } else if (device.toLowerCase().includes("node-c")) {
+                    nodeId = "node-c";
+                } else if (device.toLowerCase().includes("node-d")) {
+                    nodeId = "node-d";
                 }
-                
-                const banner = document.getElementById('weather-banner-turb');
-                if (banner) banner.style.display = 'none';
-            }
-        }
-    } catch (error) {
-        console.error("Failed to fetch weather data: ", error);
-        appendTerminal(`[WEATHER ERROR] Failed to fetch live weather data: ${error.message}`, 'system');
-    }
-}
 
-// =============================================================================
-// --- DUAL-NODE POLLUTION FLOW ANALYSIS (Node A Upstream → Node B Downstream) ---
-// =============================================================================
+                if (state.history[nodeId]) {
+                    const tempVal = parseFloat(row["Temperature (°C)"]);
+                    const phVal = parseFloat(row["pH"]);
+                    const tdsVal = parseFloat(row["TDS (ppm)"]);
+                    const turbVal = parseFloat(row["Turbidity (NTU)"]);
 
-// Node B downstream baselines: slightly elevated due to agricultural runoff,
-// sediment accumulation, and canal-side effluents between the two monitoring points.
-const NODE_B_OFFSETS = {
-    tds:  { baselineDelta: +38.0, noiseMult: 1.15 },   // +38 ppm avg from runoff
-    ph:   { baselineDelta: -0.12, noiseMult: 1.08 },   // slightly acidic from CO₂
-    temp: { baselineDelta: +0.4,  noiseMult: 1.0  },   // slightly warmer downstream
-    turb: { baselineDelta: +18.0, noiseMult: 1.25 }    // more suspended sediment
-};
+                    const trustTds = parseFloat(row["Trust_TDS (%)"]) || 100;
+                    const trustPh = parseFloat(row["Trust_pH (%)"]) || 100;
+                    const trustTemp = parseFloat(row["Trust_Temp (%)"]) || 100;
+                    const trustTurb = parseFloat(row["Trust_Turb (%)"]) || 100;
 
-// Sensor ranges used for progress bar % calculation
-const SENSOR_DISPLAY_RANGES = {
-    tds:  { min: 0,  max: 900 },
-    ph:   { min: 4,  max: 10 },
-    temp: { min: 15, max: 40 },
-    turb: { min: 0,  max: 200 }
-};
+                    if (!isNaN(tempVal)) state.history[nodeId].temp.push(tempVal);
+                    if (!isNaN(phVal)) state.history[nodeId].ph.push(phVal);
+                    if (!isNaN(tdsVal)) state.history[nodeId].tds.push(tdsVal);
+                    if (!isNaN(turbVal)) state.history[nodeId].turb.push(turbVal);
 
-// TRANSIT_TICKS: How many 1-second ticks represent the flow transit time A→B.
-// For a canal with ~0.4 m/s flow speed and ~360 m spacing between nodes,
-// water takes ~900 s ≈ 15 minutes. For the demo we use 15 ticks (15 s).
-const TRANSIT_TICKS = 15;
-
-class DualNodeAnalyzer {
-    constructor() {
-        // Ring buffers — hold last TRANSIT_TICKS readings for Node A
-        this.bufferA = { tds: [], ph: [], temp: [], turb: [] };
-        // Latest Node B values (generated each tick)
-        this.lastB = { tds: null, ph: null, temp: null, turb: null };
-        // Smoothed deltas (exponential moving average, α=0.3)
-        this.smoothDelta = { tds: 0, ph: 0, temp: 0, turb: 0 };
-        this.ready = false;
-    }
-
-    /** Feed current Node A tick data (object with id → raw value) */
-    updateNodeA(tickData) {
-        tickData.forEach(d => {
-            if (this.bufferA[d.id] !== undefined) {
-                this.bufferA[d.id].push(d.raw);
-                if (this.bufferA[d.id].length > TRANSIT_TICKS + 2) {
-                    this.bufferA[d.id].shift();
+                    state.history[nodeId].trust_temp.push(trustTemp);
+                    state.history[nodeId].trust_ph.push(trustPh);
+                    state.history[nodeId].trust_tds.push(trustTds);
+                    state.history[nodeId].trust_turb.push(trustTurb);
                 }
-            }
-        });
-        if (this.bufferA.tds.length >= TRANSIT_TICKS) this.ready = true;
-    }
+            });
 
-    /** Feed current Node B tick data (object with id → raw value) */
-    updateNodeB(tickData) {
-        tickData.forEach(d => {
-            this.lastB[d.id] = d.raw;
-        });
-    }
+            // Restrain array sizes to historyLength
+            Object.keys(state.nodes).forEach(nodeId => {
+                const h = state.history[nodeId];
+                Object.keys(h).forEach(metric => {
+                    if (h[metric].length > historyLength) {
+                        h[metric] = h[metric].slice(-historyLength);
+                    }
+                });
+                
+                // Keep the node's simulator filteredHistory synced with latest value
+                const sims = state.simulators[nodeId];
+                if (sims) {
+                    Object.keys(sims).forEach(metric => {
+                        const hList = h[metric];
+                        if (hList && hList.length > 0) {
+                            sims[metric].filteredHistory = [...hList];
+                        }
+                    });
+                }
+            });
 
-    /** Simulate Node B reading: Node A baseline-shifted + independent noise */
-    simulateNodeB(tickData) {
-        tickData.forEach(d => {
-            if (NODE_B_OFFSETS[d.id] !== undefined) {
-                const off = NODE_B_OFFSETS[d.id];
-                // Correlated with Node A but with its own noise
-                const noise = (Math.random() - 0.5) * 2 * off.noiseMult;
-                let val = d.raw + off.baselineDelta + noise;
-                // Weather boosts turbidity at both nodes if raining
-                if (d.id === 'turb' && weatherContext === 'rain') val += 12;
-                this.lastB[d.id] = val;
-            }
-        });
-    }
-
-    /**
-     * Compute per-sensor deltas using transit-time-aligned comparison:
-     * compare current Node B reading vs Node A reading from TRANSIT_TICKS ago.
-     */
-    computeDeltas() {
-        const deltas = {};
-        const α = 0.3; // EMA smoothing factor
-        ['tds', 'ph', 'temp', 'turb'].forEach(id => {
-            const bufA = this.bufferA[id];
-            const refA = bufA.length >= TRANSIT_TICKS ? bufA[bufA.length - TRANSIT_TICKS] : bufA[0];
-            const valB = this.lastB[id];
-            if (refA !== undefined && valB !== null) {
-                const raw = valB - refA;
-                this.smoothDelta[id] = α * raw + (1 - α) * this.smoothDelta[id];
-            }
-            deltas[id] = this.smoothDelta[id];
-        });
-        return deltas;
-    }
-
-    /**
-     * Weighted pollution index:
-     * Weights: TDS 35%, Turbidity 35%, pH 20%, Temperature 10%
-     * Positive = pollution increasing downstream; Negative = decreasing.
-     */
-    computePollutionIndex(deltas) {
-        const norm = {
-            tds:  deltas.tds  / 200,   // scale: 200 ppm range
-            ph:   -deltas.ph  / 2,     // pH drop → acidification → more polluted
-            temp: deltas.temp / 5,
-            turb: deltas.turb / 80
-        };
-        return 0.35 * norm.tds + 0.20 * norm.ph + 0.10 * norm.temp + 0.35 * norm.turb;
-    }
-
-    /** Render all dual-node DOM elements */
-    render(tickData, isLiveNodeB = false) {
-        if (!isLiveNodeB) {
-            this.updateNodeA(tickData);
-            this.simulateNodeB(tickData);
-        }
-        const deltas = this.computeDeltas();
-        const pollIdx = this.computePollutionIndex(deltas);
-
-        // ── Transit time display ──
-        document.getElementById('transit-time-display').textContent = `Transit: ${TRANSIT_TICKS}s`;
-
-        // ── Overall trend badge ──
-        const badge = document.getElementById('overall-trend-badge');
-        if (pollIdx > 0.08) {
-            badge.textContent = '⬆ POLLUTION INCREASING';
-            badge.className = 'badge badge-red';
-        } else if (pollIdx < -0.08) {
-            badge.textContent = '⬇ POLLUTION DECREASING';
-            badge.className = 'badge badge-green';
+            // Refresh UI
+            renderSensorCards();
+            updateSensorsPage();
+            updateOverviewPage();
+            updateComparisonTable();
         } else {
-            badge.textContent = '↔ STABLE';
-            badge.className = 'badge badge-amber';
+            logEvent('[SYSTEM] Google Sheets database empty. Pre-seeding simulator defaults.', 'warn');
         }
-
-        // ── Per-sensor rows ──
-        const sensorMeta = {
-            tds:  { unit: 'ppm',  fixed: 0 },
-            ph:   { unit: '',     fixed: 2 },
-            temp: { unit: '°C',   fixed: 1 },
-            turb: { unit: 'NTU',  fixed: 1 }
-        };
-
-        ['tds', 'ph', 'temp', 'turb'].forEach(id => {
-            const meta = sensorMeta[id];
-            if (!meta) return;
-
-            const bufA = this.bufferA[id];
-            const valA = bufA.length > 0 ? bufA[bufA.length - 1] : null;
-            const valB = this.lastB[id];
-            const delta = deltas[id];
-            const range = SENSOR_DISPLAY_RANGES[id];
-
-            if (valA === null || valB === null) return;
-
-            // Progress bar widths (clamped 2–98%)
-            const pctA = Math.min(98, Math.max(2, ((valA - range.min) / (range.max - range.min)) * 100));
-            const pctB = Math.min(98, Math.max(2, ((valB - range.min) / (range.max - range.min)) * 100));
-
-            const barA = document.getElementById(`${id}-bar-a`);
-            const barB = document.getElementById(`${id}-bar-b`);
-            const valElA = document.getElementById(`${id}-val-a`);
-            const valElB = document.getElementById(`${id}-val-b`);
-            const deltaEl = document.getElementById(`${id}-delta`);
-
-            if (barA) barA.style.width = pctA.toFixed(1) + '%';
-            if (barB) {
-                barB.style.width = pctB.toFixed(1) + '%';
-                // Color node B bar: red if higher pollution, green if cleaner
-                const increasing = id === 'ph' ? delta < -0.05 : delta > 0;
-                barB.style.background = increasing
-                    ? 'linear-gradient(90deg, hsl(0,78%,55%), hsl(15,90%,50%))'
-                    : 'linear-gradient(90deg, hsl(142,70%,42%), hsl(160,70%,38%))';
-            }
-            if (valElA) valElA.textContent = valA.toFixed(meta.fixed) + meta.unit;
-            if (valElB) valElB.textContent = valB.toFixed(meta.fixed) + meta.unit;
-
-            if (deltaEl) {
-                const sign = delta >= 0 ? '+' : '';
-                const arrow = delta > 0.02 ? ' ↑' : delta < -0.02 ? ' ↓' : ' ↔';
-                const isWorseDownstream = id === 'ph' ? delta < -0.05 : delta > 0.05;
-                deltaEl.textContent = `${sign}${delta.toFixed(meta.fixed)}${meta.unit}${arrow}`;
-                deltaEl.className = isWorseDownstream
-                    ? 'comp-delta text-red'
-                    : Math.abs(delta) < 0.05 ? 'comp-delta text-amber' : 'comp-delta text-green';
-            }
-        });
+    } catch (err) {
+        logEvent(`[SYSTEM ERROR] Failed to load Google Sheets history: ${err.message}`, 'error');
     }
 }
 
-// Singleton analyzer instance
-const dualNodeAnalyzer = new DualNodeAnalyzer();
-
-// --- LIVE MQTT CONNECTION ---
+// --- MQTT UPLINK HANDLERS (LIVE DATA RECEIPT) ---
 function connectLiveMQTT() {
-    appendTerminal(`[MQTT] Connecting to HiveMQ Cloud via WebSocket...`, 'system');
+    logEvent('[MQTT] Connecting to HiveMQ Cloud WebSocket broker...', 'system');
 
     mqttClient = mqtt.connect(MQTT_CONFIG.brokerUrl, {
         username: MQTT_CONFIG.username,
         password: MQTT_CONFIG.password,
         clientId: MQTT_CONFIG.clientId,
         protocol: 'wss',
-        reconnectPeriod: 5000,
-        connectTimeout: 10000
+        reconnectPeriod: 6000,
+        connectTimeout: 12000
     });
 
     mqttClient.on('connect', () => {
-        appendTerminal(`[MQTT] ✓ Connected to HiveMQ Cloud! Subscribing to '${MQTT_CONFIG.topic}'...`, 'info');
+        logEvent(`[MQTT] ✓ Connected! Subscribing to topic: ${MQTT_CONFIG.topic}`, 'info');
         mqttClient.subscribe(MQTT_CONFIG.topic, (err) => {
-            if (!err) {
-                appendTerminal(`[MQTT] ✓ Subscribed. Waiting for live ESP32 data...`, 'info');
-                // Update header to show LIVE status
-                const edgeLabel = document.querySelector('#node-sensors .node-meta');
-                if (edgeLabel) edgeLabel.textContent = 'LIVE ESP32 Data';
-            } else {
-                appendTerminal(`[MQTT] ✗ Subscribe failed: ${err.message}`, 'error');
-            }
+            if (err) logEvent(`[MQTT] Subscription error: ${err.message}`, 'error');
+            else logEvent('[MQTT] ✓ Subscription active. Listening for live ESP32 nodes...', 'info');
         });
     });
 
     mqttClient.on('message', (topic, message) => {
         try {
             const payload = JSON.parse(message.toString());
+            // Deduce node from topic
             const isNodeB = topic.includes('node-b') || (payload.device && payload.device.includes('node-B'));
-            handleLivePacket(payload, isNodeB);
-        } catch (e) {
-            appendTerminal(`[MQTT] Parse error: ${e.message}`, 'error');
+            const nodeId = isNodeB ? 'node-b' : 'node-a';
+            handleLivePacket(nodeId, payload);
+        } catch (err) {
+            logEvent(`[MQTT] Parse Failure: ${err.message}`, 'error');
         }
     });
 
     mqttClient.on('error', (err) => {
-        appendTerminal(`[MQTT] Connection error: ${err.message}`, 'error');
-    });
-
-    mqttClient.on('reconnect', () => {
-        appendTerminal(`[MQTT] Reconnecting to HiveMQ Cloud...`, 'warn');
+        logEvent(`[MQTT CONNECTION ERROR] ${err.message}`, 'error');
     });
 
     mqttClient.on('offline', () => {
-        appendTerminal(`[MQTT] Broker connection lost. Buffering locally.`, 'warn');
+        logEvent('[MQTT] Connection lost. Checking backup buffers.', 'warn');
     });
-    
-    if(!nodeCheckInterval) {
-        nodeCheckInterval = setInterval(checkNodeStatus, 2000);
-    }
 }
 
-function checkNodeStatus() {
-    const now = Date.now();
-    
-    // Node A check (8 seconds timeout)
-    const nodeA_dot = document.getElementById('node-a-status-dot');
-    const nodeA_text = document.getElementById('node-a-status-text');
-    if (now - lastSeenNodeA > 8000) {
-        if(nodeA_dot) {
-            nodeA_dot.className = 'status-dot offline';
-            nodeA_text.textContent = 'OFFLINE';
-            nodeA_text.className = 'lbl-bottom text-red';
-        }
-    }
-    
-    // Node B check (8 seconds timeout)
-    const nodeB_dot = document.getElementById('node-b-status-dot');
-    const nodeB_text = document.getElementById('node-b-status-text');
-    if (now - lastSeenNodeB > 8000) {
-        if(nodeB_dot) {
-            nodeB_dot.className = 'status-dot offline';
-            nodeB_text.textContent = 'OFFLINE';
-            nodeB_text.className = 'lbl-bottom text-red';
-        }
-    }
-}
+function handleLivePacket(nodeId, data) {
+    const node = state.nodes[nodeId];
+    if (!node) return;
 
-// --- HANDLE LIVE ESP32 PACKET ---
-function handleLivePacket(data, isNodeB = false) {
-    let activeFaultsCount = 0;
-    
-    if(isNodeB) {
-        lastSeenNodeB = Date.now();
-        const dot = document.getElementById('node-b-status-dot');
-        const text = document.getElementById('node-b-status-text');
-        if(dot && dot.classList.contains('offline')) {
-            dot.className = 'status-dot online';
-            text.textContent = 'ONLINE';
-            text.className = 'lbl-bottom text-green';
-        }
-    } else {
-        lastSeenNodeA = Date.now();
-        const dot = document.getElementById('node-a-status-dot');
-        const text = document.getElementById('node-a-status-text');
-        if(dot && dot.classList.contains('offline')) {
-            dot.className = 'status-dot online';
-            text.textContent = 'ONLINE';
-            text.className = 'lbl-bottom text-green';
-        }
-    }
+    node.status = 'online';
+    node.lastSeen = Date.now();
+    node.rssi = data.rssi || -60;
 
-    // Map ESP32 JSON fields to the dashboard's sensor rendering format
-    const sensorMap = [
-        { key: 'tds',  idx: 0 },
-        { key: 'ph',   idx: 1 },
-        { key: 'temp', idx: 2 },
-        { key: 'turb', idx: 3 }
-    ];
+    // Map parameters
+    const params = ['tds', 'ph', 'temp', 'turb'];
+    params.forEach(p => {
+        if (data[p]) {
+            const raw = parseFloat(data[p].raw);
+            const trust = parseInt(data[p].trust);
+            node.trustScores[p] = trust;
 
-    const tickData = [];
-
-    sensorMap.forEach(({ key, idx }) => {
-        const sensorData = data[key];
-        if (!sensorData) return;
-
-        const sensor = sensors[idx];
-        const raw = parseFloat(sensorData.raw);
-        const filtered = parseFloat(sensorData.filtered);
-        const trust = parseInt(sensorData.trust);
-        const status = sensorData.status; // 'trusted', 'suspect', 'degraded'
-
-        tickData.push({
-            id: sensor.config.id,
-            name: sensor.config.name,
-            raw: raw,
-            filtered: filtered,
-            trust: trust,
-            status: status,
-            unit: sensor.config.unit
-        });
-    });
-
-    if (isNodeB) {
-        // Update Node B status on the UI
-        const statusEl = document.getElementById('node-b-status');
-        if (statusEl) {
-            statusEl.textContent = 'ONLINE';
-            statusEl.className = 'node-status text-green';
-        }
-        
-        // Feed to DualNodeAnalyzer
-        dualNodeAnalyzer.updateNodeB(tickData);
-        
-        // Render comparison with live Node B flag set to true
-        dualNodeAnalyzer.render(tickData, true);
-        
-        if (systemTick % 6 === 0) {
-            appendTerminal(`[MQTT] Live data received from Node B`, 'info');
-        }
-        return; // Don't update main dashboard cards/charts/cloudDb with Node B data!
-    }
-
-    // Node A logic (primary dashboard display)
-    systemTick++;
-    const statusElA = document.getElementById('node-a-status');
-    if (statusElA) {
-        statusElA.textContent = 'ONLINE';
-        statusElA.className = 'node-status text-green';
-    }
-
-    tickData.forEach((td, idx) => {
-        const sensor = sensors[idx];
-        if (td.status !== 'trusted') activeFaultsCount++;
-        // Update DOM elements for sensor cards (reuse existing rendering)
-        updateSensorDOM(sensor, td.raw, td.filtered, td.trust, td.status);
-    });
-
-    // Update active fault statistics
-    document.getElementById('stat-faults').innerText = `${activeFaultsCount} currently degraded/suspect`;
-    const activeSensorsEl = document.getElementById('stat-active-sensors');
-    if (activeSensorsEl) {
-        activeSensorsEl.innerText = `${4 - activeFaultsCount} / 4`;
-        if (activeFaultsCount > 0) {
-            activeSensorsEl.className = "stat-value text-red";
-        } else {
-            activeSensorsEl.className = "stat-value";
-        }
-    }
-
-    // ML Anomaly terminal logging
-    if (data.mlAnomaly) {
-        const conf = data.mlConfidence || {};
-        appendTerminal(
-            `[TinyML Node A] ⚠ ANOMALY → Cause: ${data.mlCause} | Conf: TDS:${conf.tds||0}% pH:${conf.ph||0}% Temp:${conf.temp||0}% Turb:${conf.turb||0}%`,
-            'error'
-        );
-    } else if (systemTick % 3 === 0) {
-        appendTerminal(`[ESP32 LIVE Node A] All parameters within learned baseline. Device: ${data.device || 'node-A'}`, 'info');
-    }
-
-    // Cloud DB record
-    const packetTime = new Date().toLocaleTimeString();
-    tickData.forEach(td => {
-        const pkt = { timestamp: packetTime, sensorId: td.id, sensorName: td.name,
-                      rawVal: td.raw, filteredVal: td.filtered, trust: td.trust,
-                      status: td.status, unit: td.unit };
-        cloudDb.unshift(pkt);
-        if (cloudDb.length > 50) cloudDb.pop();
-    });
-    updateCloudDbDOM();
-
-    // Update statistics panels
-    document.getElementById('stat-buffer').innerText = localQueue.length;
-    document.getElementById('stat-cloud-records').innerText = cloudDb.length;
-    document.getElementById('queue-size-badge').innerText = `${localQueue.length} items`;
-    document.getElementById('cloud-size-badge').innerText = `${cloudDb.length} entries`;
-
-    // Animate data flow particles
-    spawnDataPacket('particles-edge', 'normal');
-    setTimeout(() => spawnDataPacket('particles-cloud', 'cloud'), 600);
-
-    // Update trust history chart
-    updateChart(tickData);
-
-    // Dual-node pollution flow analysis
-    dualNodeAnalyzer.updateNodeA(tickData);
-    dualNodeAnalyzer.render(tickData, true);
-}
-
-// --- INITIALIZATION ---
-function init() {
-    // Dynamically inject configuration values
-    document.title = `${CONFIG.projectName} - Weather-Aware Resilient IoT Edge Command Center`;
-    document.getElementById('brand-name').innerText = CONFIG.projectName;
-    document.getElementById('brand-subtitle').innerHTML = `${CONFIG.projectTitle} &bull; Weather-Aware Trust Scoring`;
-    document.getElementById('edge-node-title').innerText = `${CONFIG.projectName} Server`;
-    document.getElementById('footer-text').innerHTML = `${CONFIG.projectName} Framework Proof-of-Concept &bull; Developed by ${CONFIG.author} &bull; ${CONFIG.affiliation}`;
-
-    // Initialize virtual terminal content
-    const term = document.getElementById('edge-terminal');
-    term.innerHTML = '';
-    appendTerminal(`[SYSTEM INIT] ${CONFIG.projectName} Server initialized. Water Quality Monitoring Mode ACTIVE.`, 'system');
-    appendTerminal(`[SYSTEM INIT] Sensors online: TDS (ppm) | pH (0–14) | Temperature (°C) | Turbidity (NTU)`, 'system');
-    appendTerminal(`[SYSTEM INIT] AI Trust Scoring loaded — Z-Score, Delta-Rate, Stuck-Value, Bound-Check thresholds calibrated.`, 'system');
-    appendTerminal(`[SYSTEM INIT] WHO & FAO water quality reference ranges registered. Local fallback values ready.`, 'system');
-    appendTerminal(`[WEATHER INIT] Weather-Aware monitoring enabled for Roorkee Canal (Lat 29.8543, Lon 77.8880).`, 'system');
-    appendTerminal(`[DUAL-NODE INIT] Node A + Node B pollution flow analysis ACTIVE. Transit window: ${TRANSIT_TICKS}s.`, 'system');
-
-    // Generate Sensor instances (needed for config references in both modes)
-    SENSOR_CONFIGS.forEach(cfg => {
-        sensors.push(new SensorSimulator(cfg));
-    });
-
-    // Render static elements
-    renderSensorCards();
-    setupEventListeners();
-    initChart();
-    
-    // Fetch live weather context (Roorkee coords)
-    fetchWeather();
-    setInterval(fetchWeather, 600000); // Poll every 10 minutes
-
-    if (LIVE_MODE) {
-        // ── LIVE MODE: Connect to HiveMQ Cloud and receive real ESP32 data ──
-        appendTerminal(`[MODE] ★ LIVE MODE ACTIVE — Connecting to real ESP32 via HiveMQ Cloud...`, 'system');
-        connectLiveMQTT();
-        // The systemTickLoop is NOT started — data arrives via MQTT messages
-    } else {
-        // ── SIMULATOR MODE: Use built-in sensor simulators for demo ──
-        appendTerminal(`[MODE] Simulator mode — generating synthetic sensor data.`, 'system');
-        setInterval(systemTickLoop, 15000); // 15 seconds (4/min)
-    }
-}
-// --- MAIN LOOP ---
-function systemTickLoop() {
-    systemTick++;
-    let activeFaultsCount = 0;
-    
-    // 1. Read sensors, compute AI trust, process local decisions
-    const tickData = [];
-    
-    sensors.forEach((sensor, index) => {
-        const raw = sensor.generateValue();
-        const trust = sensor.trustEngine.calculateTrust(raw);
-        const { status, filteredVal, actionMsg } = LocalDecisionEngine.processReading(sensor, raw, trust);
-        
-        tickData.push({
-            id: sensor.config.id,
-            name: sensor.config.name,
-            raw: raw,
-            filtered: filteredVal,
-            trust: trust,
-            status: status,
-            unit: sensor.config.unit
-        });
-
-        if (status !== 'trusted') activeFaultsCount++;
-
-        // Update DOM elements for sensor cards
-        updateSensorDOM(sensor, raw, filteredVal, trust, status);
-
-        // Log actions to the virtual Edge Terminal
-        if (actionMsg !== '') {
-            appendTerminal(actionMsg, status === 'suspect' ? 'warn' : 'error');
-        } else if (systemTick % 4 === 0) {
-            // General Info logs every few ticks
-            appendTerminal(`[INFO] ${sensor.config.name} nominal. Value: ${filteredVal.toFixed(2)}${sensor.config.unit} (Trust: ${trust}%)`, 'info');
-        }
-    });
-
-    // Update active fault statistics
-    document.getElementById('stat-faults').innerText = `${activeFaultsCount} currently degraded/suspect`;
-    const activeSensorsEl = document.getElementById('stat-active-sensors');
-    if (activeSensorsEl) {
-        activeSensorsEl.innerText = `${4 - activeFaultsCount} / 4`;
-        if (activeFaultsCount > 0) {
-            activeSensorsEl.className = "stat-value text-red";
-        } else {
-            activeSensorsEl.className = "stat-value";
-        }
-    }
-
-    // 2. Queue or sync data based on connectivity status
-    const packetTime = new Date().toLocaleTimeString();
-    
-    tickData.forEach(data => {
-        const telemetryPacket = {
-            timestamp: packetTime,
-            sensorId: data.id,
-            sensorName: data.name,
-            rawVal: data.raw,
-            filteredVal: data.filtered,
-            trust: data.trust,
-            status: data.status,
-            unit: data.unit
-        };
-
-        if (isCloudOnline) {
-            // Uplink is healthy: Transmit data straight to Cloud
-            cloudDb.unshift(telemetryPacket);
-            if (cloudDb.length > 50) cloudDb.pop();
-            
-            // Render cloud db update
-            updateCloudDbDOM();
-            
-            // Visual flow animations (green/blue packets)
-            spawnDataPacket('particles-edge', data.status === 'degraded' ? 'faulty' : 'normal');
-            setTimeout(() => {
-                spawnDataPacket('particles-cloud', data.status === 'degraded' ? 'faulty' : 'cloud');
-            }, 600);
-        } else {
-            // Outage Mode: Buffer telemetry in local queue
-            localQueue.push(telemetryPacket);
-            if (localQueue.length > 500) {
-                localQueue.shift(); // Hard limit on buffer
-                appendTerminal(`[BUFFER FULL] Outage buffer capacity reached! Dropping oldest telemetry packet.`, 'error');
+            // Push into history
+            if (state.history[nodeId] && state.history[nodeId][p]) {
+                state.history[nodeId][p].push(raw);
+                state.history[nodeId][`trust_${p}`].push(trust);
+                if (state.history[nodeId][p].length > historyLength) {
+                    state.history[nodeId][p].shift();
+                    state.history[nodeId][`trust_${p}`].shift();
+                }
             }
-            
-            updateEdgeQueueDOM();
-            spawnDataPacket('particles-edge', data.status === 'degraded' ? 'faulty' : 'normal');
-            // Packet flow stops at Edge node - no particles to Cloud
         }
     });
 
-    // Update statistics panels
-    const statBuffer = document.getElementById('stat-buffered');
-    if(statBuffer) statBuffer.innerText = localQueue.length;
-    const statCloud = document.getElementById('stat-cloud');
-    if(statCloud) statCloud.innerText = cloudDb.length;
-
-    // 3. Update trust history chart
-    updateChart(tickData);
-
-    // 4. Dual-node pollution flow analysis (Node A → Node B)
-    dualNodeAnalyzer.render(tickData);
-}
-
-// --- EVENT HANDLERS ---
-function setupEventListeners() {
-    // Navigation Routing (SPA Logic)
-    const navItems = document.querySelectorAll('.nav-item');
-    const pageViews = document.querySelectorAll('.page-view');
-    navItems.forEach(item => {
-        item.addEventListener('click', () => {
-            // Remove active from all nav items and pages
-            navItems.forEach(nav => nav.classList.remove('active'));
-            pageViews.forEach(page => page.classList.remove('active'));
-            
-            // Add active to clicked nav and corresponding page
-            item.classList.add('active');
-            const targetId = item.getAttribute('data-page');
-            const targetView = document.getElementById(targetId);
-            if(targetView) targetView.classList.add('active');
-        });
-    });
-
-    // Cloud Outage Toggle Switch
-    const cloudToggle = document.getElementById('cloud-toggle');
-    const cloudStatusText = document.getElementById('cloud-status-text');
-    const syncStatusText = document.getElementById('sync-status-text');
-    const syncIcon = document.getElementById('sync-icon');
-    const flowLine = document.getElementById('flow-edge-to-cloud');
-    const cloudNode = document.getElementById('node-cloud');
-    const cloudMeta = document.getElementById('cloud-meta-text');
-
-    cloudToggle.addEventListener('change', (e) => {
-        isCloudOnline = e.target.checked;
-        if (isCloudOnline) {
-            // Reconnected
-            cloudStatusText.innerText = "CONNECTED";
-            cloudStatusText.className = "lbl-bottom text-green";
-            flowLine.classList.remove('offline');
-            cloudNode.classList.remove('disconnected');
-            cloudMeta.innerText = "Sync Target";
-            
-            appendTerminal(`[OUTAGE RECOVERY] Cloud uplink connection RESTORED. Triggering automatic batch sync...`, 'info');
-            triggerBatchSync();
-        } else {
-            // Outage started
-            cloudStatusText.innerText = "OFFLINE (OUTAGE)";
-            cloudStatusText.className = "lbl-bottom text-red";
-            syncStatusText.innerText = "BUFFERING";
-            syncIcon.className = "sync-state-dot buffering";
-            flowLine.classList.add('offline');
-            cloudNode.classList.add('disconnected');
-            cloudMeta.innerText = "CONNECTION LOSS";
-            
-            appendTerminal(`[NETWORK OUTAGE] Cloud uplink lost! ${CONFIG.projectName} entering Edge-Autonomous mode. Buffering local telemetry to queue.`, 'warn');
-        }
-    });
-
-    // Clear Terminal button
-    document.getElementById('clear-terminal').addEventListener('click', () => {
-        const term = document.getElementById('edge-terminal');
-        term.innerHTML = '<div class="terminal-line system-line">[SYSTEM LOGS CLEARED]</div>';
-    });
-}
-
-// --- SYNC ENGINE ---
-function triggerBatchSync() {
-    if (localQueue.length === 0) {
-        document.getElementById('sync-status-text').innerText = "IDLE";
-        document.getElementById('sync-icon').className = "sync-state-dot idle";
-        return;
+    // ML Anomaly warning logs
+    if (data.mlAnomaly) {
+        logEvent(`[TinyML Anomaly ${node.name}] Anomaly flag TRUE (Cause: ${data.mlCause || 'Unknown'}). Decoupling bounds shifted.`, 'error');
     }
+}
 
-    isSyncing = true;
-    document.getElementById('sync-status-text').innerText = "SYNCING";
-    document.getElementById('sync-icon').className = "sync-state-dot syncing";
+// --- SIMULATED DATA LOOP (FALLBACK / PARALLEL SYSTEM) ---
+function runSimulatedTick() {
+    state.systemTick++;
+    let activeFaultsCount = 0;
 
-    // 5 Hz syncing - 1 packet popped every 200ms
-    const syncInterval = setInterval(() => {
-        if (!isCloudOnline) {
-            // Outage occurred mid-sync
-            clearInterval(syncInterval);
-            isSyncing = false;
+    // Generate values for all nodes
+    Object.keys(state.nodes).forEach(nodeId => {
+        const node = state.nodes[nodeId];
+        
+        // Skip simulated updates if node is currently live via MQTT (Node A or Node B)
+        const isLive = LIVE_MODE && (nodeId === 'node-a' || nodeId === 'node-b') && (Date.now() - node.lastSeen < 7500);
+
+        if (node.status === 'offline') {
             return;
         }
 
-        if (localQueue.length > 0) {
-            const packet = localQueue.shift();
-            cloudDb.unshift(packet);
-            if (cloudDb.length > 100) cloudDb.pop(); // keep DB tidy
+        const tickData = [];
+        const sims = state.simulators[nodeId];
 
-            // Update stats
-            document.getElementById('stat-buffer').innerText = localQueue.length;
-            document.getElementById('stat-cloud-records').innerText = cloudDb.length;
-            document.getElementById('queue-size-badge').innerText = `${localQueue.length} items`;
-            document.getElementById('cloud-size-badge').innerText = `${cloudDb.length} entries`;
+        node.sensors.forEach(sensorId => {
+            const sim = sims[sensorId];
+            let raw = 0;
+            let trust = 0;
+            let filteredVal = 0;
+            let status = 'trusted';
+            let actionMsg = '';
 
-            updateEdgeQueueDOM();
-            updateCloudDbDOM();
+            if (isLive) {
+                // If live MQTT data, use the last value pushed by MQTT
+                const hList = state.history[nodeId][sensorId];
+                const tList = state.history[nodeId][`trust_${sensorId}`];
+                raw = hList.length > 0 ? hList[hList.length - 1] : sim.config.baseline;
+                trust = tList.length > 0 ? tList[tList.length - 1] : 100;
+                filteredVal = raw; // assume pre-filtered or simple copy
+                status = trust < 50 ? 'degraded' : trust < 80 ? 'suspect' : 'trusted';
+            } else {
+                // Generate simulated values
+                raw = sim.generateValue();
+                trust = sim.trustEngine.calculateTrust(raw);
+                const res = LocalDecisionEngine.processReading(sim, raw, trust);
+                filteredVal = res.filteredVal;
+                status = res.status;
+                actionMsg = res.actionMsg;
 
-            // Spawn visual sync packets going to cloud
-            spawnDataPacket('particles-cloud', packet.status === 'degraded' ? 'faulty' : 'cloud');
-        } else {
-            // Sync complete
-            clearInterval(syncInterval);
-            isSyncing = false;
-            document.getElementById('sync-status-text').innerText = "IDLE";
-            document.getElementById('sync-icon').className = "sync-state-dot idle";
-            appendTerminal(`[SYNC COMPLETE] Successfully uploaded all offline buffered telemetry records.`, 'info');
+                // Push to historical data
+                state.history[nodeId][sensorId].push(raw);
+                state.history[nodeId][`trust_${sensorId}`].push(trust);
+                if (state.history[nodeId][sensorId].length > historyLength) {
+                    state.history[nodeId][sensorId].shift();
+                    state.history[nodeId][`trust_${sensorId}`].shift();
+                }
+            }
+
+            node.trustScores[sensorId] = trust;
+            if (status !== 'trusted') activeFaultsCount++;
+
+            tickData.push({
+                id: sensorId,
+                name: sim.config.name,
+                raw: raw,
+                filtered: filteredVal,
+                trust: trust,
+                status: status,
+                unit: sim.config.unit
+            });
+
+            // Log fault anomalies
+            if (actionMsg && !isLive && nodeId === state.selectedNode) {
+                logEvent(`[${node.name}] ${actionMsg}`, status === 'suspect' ? 'warn' : 'error');
+            }
+        });
+
+        // Trigger network buffering or sync simulation (ONLY for selectedNode for console demonstration)
+        if (nodeId === 'node-a') {
+            tickData.forEach(item => {
+                const telemetryPacket = {
+                    timestamp: new Date().toLocaleTimeString(),
+                    node: nodeId,
+                    sensorName: item.name,
+                    rawVal: item.raw,
+                    filteredVal: item.filtered,
+                    trust: item.trust,
+                    status: item.status,
+                    unit: item.unit
+                };
+
+                if (state.isCloudOnline) {
+                    state.cloudDb.unshift(telemetryPacket);
+                    if (state.cloudDb.length > 60) state.cloudDb.pop();
+                } else {
+                    state.localQueue.push(telemetryPacket);
+                    if (state.localQueue.length > 500) {
+                        state.localQueue.shift();
+                        logEvent('[BUFFER FULL] SPIFFS Outage Queue capacity reached! Dropping oldest telemetry packet.', 'error');
+                    }
+                }
+            });
         }
-    }, 200);
+    });
+
+    // Update global Stats & widgets
+    updateStatsDOM();
+    
+    // Draw current active page contents
+    if (state.activePage === 'view-overview') {
+        updateOverviewPage();
+    } else if (state.activePage === 'view-sensors') {
+        updateSensorsPage();
+    } else if (state.activePage === 'view-analytics') {
+        updateAnalyticsPage();
+    }
 }
 
-// --- UI RENDERING METHODS ---
+// --- BATCH CLOUD SYNC DRAINING ---
+function triggerBatchSync() {
+    if (state.localQueue.length === 0) {
+        setSyncStatus('idle');
+        return;
+    }
 
+    state.isSyncing = true;
+    setSyncStatus('syncing');
+
+    const syncInterval = setInterval(() => {
+        if (!state.isCloudOnline) {
+            clearInterval(syncInterval);
+            state.isSyncing = false;
+            setSyncStatus('buffering');
+            return;
+        }
+
+        if (state.localQueue.length > 0) {
+            const packet = state.localQueue.shift();
+            state.cloudDb.unshift(packet);
+            if (state.cloudDb.length > 60) state.cloudDb.pop();
+
+            updateStatsDOM();
+        } else {
+            clearInterval(syncInterval);
+            state.isSyncing = false;
+            setSyncStatus('idle');
+            logEvent('[SYNC SERVICE] ✓ Edge autonomous sync complete. Buffered registers draining successful.', 'info');
+        }
+    }, 200); // 5Hz (1 every 200ms)
+}
+
+function setSyncStatus(status) {
+    const icon = document.getElementById('sync-icon');
+    const label = document.getElementById('sync-status-text');
+    const flowLine = document.getElementById('flow-edge-to-cloud');
+    const cloudCircle = document.getElementById('cloud-circle');
+    const cloudMeta = document.getElementById('cloud-meta-text');
+
+    if (!icon || !label) return;
+
+    if (status === 'idle') {
+        icon.className = 'status-dot-active';
+        label.innerText = 'Live Sync';
+        label.className = 'font-extrabold uppercase text-[10px] text-emerald-400 tracking-wider';
+        if (flowLine) flowLine.setAttribute('class', 'flow-line-active');
+        if (cloudCircle) cloudCircle.setAttribute('stroke', 'var(--accent-cyan)');
+        if (cloudMeta) cloudMeta.innerText = 'Connected';
+    } else if (status === 'syncing') {
+        icon.className = 'status-dot-active';
+        label.innerText = 'Syncing...';
+        label.className = 'font-extrabold uppercase text-[10px] text-blue-400 tracking-wider';
+        if (flowLine) flowLine.setAttribute('class', 'flow-line-active');
+    } else if (status === 'buffering') {
+        icon.className = 'status-dot-offline';
+        label.innerText = 'Buffering';
+        label.className = 'font-extrabold uppercase text-[10px] text-red-400 tracking-wider';
+        if (flowLine) flowLine.setAttribute('class', 'flow-line-inactive');
+        if (cloudCircle) cloudCircle.setAttribute('stroke', 'var(--text-muted)');
+        if (cloudMeta) cloudMeta.innerText = 'Unreachable';
+    }
+}
+
+// --- TERMINAL LOGSTREAM SYSTEM ---
+function logEvent(msg, type = 'info') {
+    const timestamp = new Date().toLocaleTimeString();
+    const logItem = { time: timestamp, msg, type };
+    state.logs.push(logItem);
+    if (state.logs.length > 200) state.logs.shift();
+
+    if (state.logPaused) return;
+
+    // Render to small stream inside overview
+    const smallStream = document.getElementById('console-stream');
+    if (smallStream && state.activePage === 'view-overview') {
+        const p = document.createElement('div');
+        p.className = `p-1 border-l-2 border-gray-800 my-1 ${type === 'error' ? 'text-magenta-accent border-l-magenta-accent' : type === 'warn' ? 'text-yellow-400 border-l-yellow-400' : 'text-light-gray'}`;
+        p.innerHTML = `<span>[${timestamp}]</span> ${msg}`;
+        smallStream.appendChild(p);
+        
+        if (smallStream.childElementCount > 40) {
+            smallStream.removeChild(smallStream.firstChild);
+        }
+        smallStream.scrollTop = smallStream.scrollHeight;
+    }
+
+    // Render to large terminal page
+    const mainTerm = document.getElementById('main-terminal');
+    if (mainTerm && state.activePage === 'view-console') {
+        if (shouldDisplayLog(type)) {
+            const div = document.createElement('div');
+            div.className = `my-1 ${type === 'error' ? 'log-error' : type === 'warn' ? 'log-warn' : type === 'system' ? 'log-system' : 'log-info'}`;
+            div.innerText = `[${timestamp}] ${msg}`;
+            mainTerm.appendChild(div);
+            
+            if (mainTerm.childElementCount > 150) {
+                mainTerm.removeChild(mainTerm.firstChild);
+            }
+            mainTerm.scrollTop = mainTerm.scrollHeight;
+        }
+    }
+}
+
+function shouldDisplayLog(type) {
+    if (state.logFilter === 'all') return true;
+    return state.logFilter === type;
+}
+
+function renderFullConsoleLogs() {
+    const mainTerm = document.getElementById('main-terminal');
+    if (!mainTerm) return;
+    mainTerm.innerHTML = '';
+    
+    state.logs.forEach(log => {
+        if (shouldDisplayLog(log.type)) {
+            const div = document.createElement('div');
+            div.className = `my-1 ${log.type === 'error' ? 'log-error' : log.type === 'warn' ? 'log-warn' : log.type === 'system' ? 'log-system' : 'log-info'}`;
+            div.innerText = `[${log.time}] ${log.msg}`;
+            mainTerm.appendChild(div);
+        }
+    });
+    mainTerm.scrollTop = mainTerm.scrollHeight;
+}
+
+// --- DOM RENDER WIDGETS ---
+
+function updateStatsDOM() {
+    // Stat cards Overview
+    const actSens = document.getElementById('stat-active-sensors');
+    const bufCount = document.getElementById('stat-buffered');
+    const cldCount = document.getElementById('stat-cloud');
+    const riskEl = document.getElementById('stat-risk');
+
+    const activeNodes = Object.values(state.nodes).filter(n => n.status === 'online').length;
+    const totalNodes = Object.keys(state.nodes).length;
+
+    if (actSens) actSens.innerText = `${activeNodes} / ${totalNodes} Nodes`;
+    if (bufCount) bufCount.innerText = state.localQueue.length;
+    if (cldCount) cldCount.innerText = state.cloudDb.length;
+    
+    // Risk State calculations
+    let degradedCount = 0;
+    Object.values(state.nodes).forEach(n => {
+        if (n.status === 'online') {
+            Object.values(n.trustScores).forEach(score => {
+                if (score < 50) degradedCount++;
+            });
+        }
+    });
+
+    if (riskEl) {
+        if (degradedCount > 0) {
+            riskEl.innerText = 'WARNING';
+            riskEl.className = 'text-3xl font-extrabold mt-1 text-red-400';
+        } else {
+            riskEl.innerText = 'NOMINAL';
+            riskEl.className = 'text-3xl font-extrabold mt-1 text-white';
+        }
+    }
+
+    const qBadge = document.getElementById('queue-size-badge');
+    const cBadge = document.getElementById('cloud-size-badge');
+    if (qBadge) qBadge.innerText = `${state.localQueue.length} records buffered`;
+    if (cBadge) cBadge.innerText = `${state.cloudDb.length} records synced`;
+}
+
+// Overview page charts and topology updating
+const miniChartInstances = {};
+
+function initOverviewCharts() {
+    const chartIds = ['miniChartTds', 'miniChartPh', 'miniChartTemp', 'miniChartTurb'];
+    const metrics = ['tds', 'ph', 'temp', 'turb'];
+    const colors = ['#06b6d4', '#14b8a6', '#38bdf8', '#a78bfa'];
+
+    chartIds.forEach((id, idx) => {
+        const canvas = document.getElementById(id);
+        if (!canvas) return;
+        
+        miniChartInstances[metrics[idx]] = new Chart(canvas.getContext('2d'), {
+            type: 'line',
+            data: {
+                labels: Array.from({length: 15}, (_, i) => `-${(15-i)*2}s`),
+                datasets: [{
+                    data: Array(15).fill(0),
+                    borderColor: colors[idx],
+                    backgroundColor: colors[idx] + '15',
+                    borderWidth: 1.5,
+                    pointRadius: 0,
+                    tension: 0.35,
+                    fill: true
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                    x: { display: false },
+                    y: { grid: { color: 'rgba(6, 182, 212, 0.06)' }, ticks: { color: '#64748b', font: { size: 8 } } }
+                }
+            }
+        });
+    });
+}
+
+function updateOverviewPage() {
+    // Update mini-charts values
+    const metrics = ['tds', 'ph', 'temp', 'turb'];
+    metrics.forEach(m => {
+        const dropdown = document.getElementById(`node-select-${m}`);
+        const selectedNodeId = dropdown ? dropdown.value : 'node-a';
+        
+        const chart = miniChartInstances[m];
+        if (chart && state.history[selectedNodeId] && state.history[selectedNodeId][m]) {
+            const fullHistory = state.history[selectedNodeId][m];
+            chart.data.datasets[0].data = fullHistory.slice(-15);
+            chart.update('none');
+        }
+    });
+
+    // Update Interactive Topology Visual States
+    Object.keys(state.nodes).forEach(nodeId => {
+        const node = state.nodes[nodeId];
+        const circle = document.getElementById(`node-${nodeId.split('-')[1]}-circle`);
+        const icon = document.getElementById(`node-${nodeId.split('-')[1]}-icon`);
+        const trustLabel = document.getElementById(`${nodeId}-topo-trust`);
+        
+        if (circle) {
+            if (node.status === 'online') {
+                // compute average trust
+                const scores = Object.values(node.trustScores);
+                const avgTrust = Math.round(scores.reduce((a,b)=>a+b,0)/scores.length);
+                
+                if (avgTrust >= 80) circle.setAttribute('stroke', '#10b981'); // nominal green
+                else if (avgTrust >= 50) circle.setAttribute('stroke', '#f59e0b'); // degraded yellow
+                else circle.setAttribute('stroke', '#ef4444'); // alert red
+                
+                if (icon) icon.setAttribute('fill', circle.getAttribute('stroke'));
+                if (trustLabel) {
+                    trustLabel.innerText = `${avgTrust}% Avg Trust`;
+                    trustLabel.setAttribute('fill', circle.getAttribute('stroke'));
+                }
+            } else {
+                circle.setAttribute('stroke', '#6b7280'); // offline grey
+                if (icon) icon.setAttribute('fill', '#6b7280');
+                if (trustLabel) {
+                    trustLabel.innerText = 'Offline';
+                    trustLabel.setAttribute('fill', '#6b7280');
+                }
+            }
+        }
+    });
+}
+
+// Telemetry Sensors page rendering
 function renderSensorCards() {
     const container = document.getElementById('sensor-container');
+    if (!container) return;
     container.innerHTML = '';
 
-    sensors.forEach((sensor, index) => {
-        const cfg = sensor.config;
-        // Determine decimal places per sensor type
-        const decimals = cfg.id === 'ph' ? 2 : cfg.id === 'turb' ? 1 : cfg.id === 'tds' ? 0 : 1;
+    const node = state.nodes[state.selectedNode];
+    if (!node) return;
+
+    node.sensors.forEach(s => {
+        const cfg = SENSOR_CONFIGS[s];
+        if (!cfg) return;
+
         const card = document.createElement('div');
-        card.className = 'sensor-card trusted';
-        card.id = `sensor-card-${cfg.id}`;
+        card.className = `glass-card ${cfg.cardClass} flex flex-col justify-between`;
+        card.id = `card-metric-${s}`;
+
         card.innerHTML = `
-            <div class="sensor-card-header">
-                <span class="sensor-name"><i class="fa-solid ${cfg.icon}"></i> ${cfg.name}</span>
-                <span id="badge-${cfg.id}" class="sensor-badge trusted">Trusted</span>
-            </div>
-            <div class="sensor-full-name">${cfg.fullName}</div>
-            ${cfg.id === 'turb' ? `<div id="weather-banner-turb" class="weather-banner" style="display: none;"><i class="fa-solid fa-cloud-showers-heavy text-amber"></i> Rain Detected — Turbidity spike expected. Trust penalty reduced.</div>` : ''}
-            <div class="sensor-readings">
-                <span id="raw-${cfg.id}" class="sensor-raw">--</span>
-                <div class="sensor-filtered">
-                    <span class="lbl-top">Edge Output</span>
-                    <span id="filtered-${cfg.id}">--</span>
+            <div>
+                <div class="flex justify-between items-center mb-2">
+                    <span class="text-xs font-bold uppercase tracking-wider text-light-gray"><i class="fa-solid ${cfg.icon} mr-1.5 text-[14px]"></i> ${cfg.name}</span>
+                    <span class="text-[9px] font-extrabold uppercase px-2 py-0.5 rounded bg-soft-green/20 text-soft-green" id="sensor-badge-${s}">Nominal</span>
+                </div>
+                <div class="text-xs text-light-gray mb-3">${cfg.fullName}</div>
+                <div class="flex justify-between items-baseline my-4">
+                    <div>
+                        <span class="text-3xl font-extrabold text-white" id="sensor-raw-${s}">--</span>
+                        <span class="text-xs text-light-gray ml-0.5">${cfg.unit}</span>
+                    </div>
+                    <div class="text-right">
+                        <span class="block text-[9px] font-bold text-light-gray uppercase">Edge Filtered Output</span>
+                        <span class="text-sm font-bold text-cyan-accent" id="sensor-filt-${s}">--</span>
+                    </div>
+                </div>
+                <div class="flex justify-between text-[10px] text-light-gray mb-4 border-t border-gray-700/20 pt-2">
+                    <span>Safe WHO bounds: ${cfg.safeMin} - ${cfg.safeMax}</span>
+                    <span class="font-extrabold" id="sensor-flag-${s}">✓ OK</span>
+                </div>
+
+                <!-- Sparkline SVG Sparkline container -->
+                <div class="h-10 mb-4 bg-navy-bg/30 border border-[var(--border-color)] rounded-lg overflow-hidden flex items-end">
+                    <canvas class="sparkline-canvas" id="sparkline-canvas-${s}" height="40" width="220"></canvas>
+                </div>
+
+                <!-- Trust score progress bar -->
+                <div class="mb-4">
+                    <div class="flex justify-between items-center text-[10px] mb-1.5 font-bold text-light-gray">
+                        <span>Edge AI Trust Score</span>
+                        <span id="sensor-trust-val-${s}">100%</span>
+                    </div>
+                    <div class="h-1.5 bg-navy-bg rounded-full overflow-hidden">
+                        <div class="h-full bg-cyan-accent" id="sensor-trust-bar-${s}" style="width: 100%; transition: width 0.3s ease;"></div>
+                    </div>
                 </div>
             </div>
-            <div class="safe-range-row">
-                <span class="safe-range-label">Safe Range</span>
-                <span class="safe-range-value">${cfg.safeMin} – ${cfg.safeMax}${cfg.unit}</span>
-                <span id="range-flag-${cfg.id}" class="range-flag"></span>
-            </div>
-            <div class="sensor-trust-section">
-                <div class="trust-label-row">
-                    <span>AI Trust Score</span>
-                    <span id="trust-val-${cfg.id}">100%</span>
-                </div>
-                <div class="trust-bar-bg">
-                    <div id="trust-bar-${cfg.id}" class="trust-bar-fill" style="width: 100%"></div>
-                </div>
-            </div>
-            <div class="fault-controls">
-                <span class="fault-title">Fault Injection Model</span>
-                <div class="fault-btn-group">
-                    <button class="btn-fault active" data-fault="normal" onclick="injectFault('${cfg.id}', 'normal', this)">Normal</button>
-                    <button class="btn-fault" data-fault="noise" onclick="injectFault('${cfg.id}', 'noise', this)">Noise</button>
-                    <button class="btn-fault" data-fault="spike" onclick="injectFault('${cfg.id}', 'spike', this)">Spike</button>
-                    <button class="btn-fault" data-fault="stuck" onclick="injectFault('${cfg.id}', 'stuck', this)">Stuck</button>
-                    <button class="btn-fault" style="grid-column: span 2" data-fault="drift" onclick="injectFault('${cfg.id}', 'drift', this)">Linear Drift</button>
+
+            <!-- Fault Injection panel -->
+            <div class="border-t border-gray-700/20 pt-3">
+                <span class="block text-[9px] font-extrabold text-light-gray uppercase tracking-wider mb-2">Simulate Hardware Fault</span>
+                <div class="grid grid-cols-5 gap-1.5">
+                    <button class="btn-fault active" data-fault="normal" onclick="injectNodeFault('${s}', 'normal')">Nominal</button>
+                    <button class="btn-fault" data-fault="noise" onclick="injectNodeFault('${s}', 'noise')">Noise</button>
+                    <button class="btn-fault" data-fault="spike" onclick="injectNodeFault('${s}', 'spike')">Spike</button>
+                    <button class="btn-fault" data-fault="stuck" onclick="injectNodeFault('${s}', 'stuck')">Stuck</button>
+                    <button class="btn-fault" data-fault="drift" onclick="injectNodeFault('${s}', 'drift')">Drift</button>
                 </div>
             </div>
         `;
@@ -1132,311 +1073,812 @@ function renderSensorCards() {
     });
 }
 
-// Bind to window to allow button onclick triggers
-window.injectFault = function(sensorId, faultName, btnElement) {
-    const sensor = sensors.find(s => s.config.id === sensorId);
-    if (!sensor) return;
+function updateSensorsPage() {
+    const node = state.nodes[state.selectedNode];
+    if (!node) return;
 
-    sensor.setFault(faultName);
-    
-    // Toggle active classes in card UI
-    const card = document.getElementById(`sensor-card-${sensorId}`);
-    const buttons = card.querySelectorAll('.btn-fault');
-    buttons.forEach(btn => btn.classList.remove('active'));
-    btnElement.classList.add('active');
+    node.sensors.forEach(s => {
+        const sim = state.simulators[state.selectedNode][s];
+        const historyData = state.history[state.selectedNode][s];
+        const trustHistory = state.history[state.selectedNode][`trust_${s}`];
 
-    if (faultName === 'normal') {
-        appendTerminal(`[FAULT CLEAR] ${sensor.config.name} set to normal mode. Recalibrating trust levels.`, 'info');
-    } else {
-        appendTerminal(`[FAULT INJECT] Activating ${faultName.toUpperCase()} fault on ${sensor.config.name} sensor.`, 'warn');
+        if (historyData.length === 0) return;
+
+        const rawVal = historyData[historyData.length - 1];
+        const trustVal = trustHistory[trustHistory.length - 1];
+        const filteredVal = sim.filteredHistory.length > 0 ? sim.filteredHistory[sim.filteredHistory.length - 1] : rawVal;
+
+        const rawEl = document.getElementById(`sensor-raw-${s}`);
+        const filtEl = document.getElementById(`sensor-filt-${s}`);
+        const flagEl = document.getElementById(`sensor-flag-${s}`);
+        const trustValEl = document.getElementById(`sensor-trust-val-${s}`);
+        const trustBarEl = document.getElementById(`sensor-trust-bar-${s}`);
+        const badgeEl = document.getElementById(`sensor-badge-${s}`);
+
+        const decimals = s === 'ph' ? 2 : s === 'turb' ? 1 : 0;
+
+        // Raw Value update
+        if (rawEl) {
+            rawEl.innerText = rawVal.toFixed(decimals);
+            // Red alert if out of safe bounds
+            const isUnsafe = rawVal < sim.config.safeMin || rawVal > sim.config.safeMax;
+            rawEl.className = isUnsafe ? 'text-3xl font-extrabold text-magenta-accent animate-pulse' : 'text-3xl font-extrabold text-white';
+            if (flagEl) {
+                flagEl.innerText = isUnsafe ? '⚠ OUT OF BOUNDS' : '✓ OK';
+                flagEl.className = isUnsafe ? 'font-extrabold text-magenta-accent' : 'font-extrabold text-soft-green';
+            }
+        }
+
+        // Filtered Output update
+        if (filtEl) filtEl.innerText = `${filteredVal.toFixed(decimals)}${sim.config.unit}`;
+
+        // Trust score bar update
+        if (trustValEl) trustValEl.innerText = `${trustVal}%`;
+        if (trustBarEl) {
+            trustBarEl.style.width = `${trustVal}%`;
+            // Color shifts
+            if (trustVal >= 80) trustBarEl.style.backgroundColor = 'var(--accent-green)';
+            else if (trustVal >= 50) trustBarEl.style.backgroundColor = 'var(--accent-orange)';
+            else trustBarEl.style.backgroundColor = 'var(--accent-red)';
+        }
+
+        // Status badge updates
+        if (badgeEl) {
+            if (trustVal >= 80) {
+                badgeEl.innerText = 'Nominal';
+                badgeEl.className = 'text-[9px] font-extrabold uppercase px-2 py-0.5 rounded bg-soft-green/20 text-soft-green';
+            } else if (trustVal >= 50) {
+                badgeEl.innerText = 'Noise Mitigated';
+                badgeEl.className = 'text-[9px] font-extrabold uppercase px-2 py-0.5 rounded bg-yellow-500/20 text-yellow-500';
+            } else {
+                badgeEl.innerText = 'Sensor decoupled';
+                badgeEl.className = 'text-[9px] font-extrabold uppercase px-2 py-0.5 rounded bg-magenta-accent/20 text-magenta-accent';
+            }
+        }
+
+        // Render mini sparklines via HTML5 Canvas
+        drawSparkline(`sparkline-canvas-${s}`, historyData.slice(-20), SENSOR_CONFIGS[s].color);
+        
+        // Synchronize selected fault injection buttons
+        const card = document.getElementById(`card-metric-${s}`);
+        if (card) {
+            const buttons = card.querySelectorAll('.btn-fault');
+            buttons.forEach(btn => {
+                if (btn.getAttribute('data-fault') === sim.currentFault) {
+                    btn.classList.add('active');
+                } else {
+                    btn.classList.remove('active');
+                }
+            });
+        }
+    });
+
+    // Update Upstream vs Downstream comparative table values
+    if (state.comparisonEnabled) {
+        updateComparisonTable();
     }
+}
+
+function drawSparkline(canvasId, dataHistory, color) {
+    const canvas = document.getElementById(canvasId);
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    
+    // Clear canvas
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (dataHistory.length < 2) return;
+
+    ctx.beginPath();
+    const min = Math.min(...dataHistory);
+    const max = Math.max(...dataHistory);
+    const range = (max - min) === 0 ? 1.0 : (max - min);
+
+    for (let i = 0; i < dataHistory.length; i++) {
+        const x = (i / (dataHistory.length - 1)) * canvas.width;
+        // Map Y coords with padding
+        const y = canvas.height - ((dataHistory[i] - min) / range) * (canvas.height - 6) - 3;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+    }
+    
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.8;
+    ctx.stroke();
+
+    // Fill area below sparkline
+    ctx.lineTo(canvas.width, canvas.height);
+    ctx.lineTo(0, canvas.height);
+    ctx.closePath();
+    
+    const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+    gradient.addColorStop(0, color.replace('1)', '0.15)'));
+    gradient.addColorStop(1, color.replace('1)', '0)'));
+    ctx.fillStyle = gradient;
+    ctx.fill();
+}
+
+window.injectNodeFault = function(sensorId, faultName) {
+    const sim = state.simulators[state.selectedNode][sensorId];
+    if (!sim) return;
+
+    sim.setFault(faultName);
+    
+    if (faultName === 'normal') {
+        logEvent(`[${state.nodes[state.selectedNode].name}] Clear fault on ${sim.config.name} sensor. Calibrating...`, 'info');
+    } else {
+        logEvent(`[${state.nodes[state.selectedNode].name}] Injected ${faultName.toUpperCase()} fault on ${sim.config.name}.`, 'warn');
+    }
+    updateSensorsPage();
 };
 
-function updateSensorDOM(sensor, raw, filtered, trust, status) {
-    const id = sensor.config.id;
-    const cfg = sensor.config;
-    const rawEl = document.getElementById(`raw-${id}`);
-    const filtEl = document.getElementById(`filtered-${id}`);
-    const trustValEl = document.getElementById(`trust-val-${id}`);
-    const trustBarEl = document.getElementById(`trust-bar-${id}`);
-    const badgeEl = document.getElementById(`badge-${id}`);
-    const cardEl = document.getElementById(`sensor-card-${id}`);
-    const rangeFlagEl = document.getElementById(`range-flag-${id}`);
+function updateComparisonTable() {
+    const checkboxes = document.querySelectorAll('.telemetry-node-cb:checked');
+    const selectedNodes = Array.from(checkboxes).map(cb => cb.value);
 
-    // Determine decimal precision per sensor
-    const dec = id === 'ph' ? 2 : id === 'turb' ? 1 : id === 'tds' ? 0 : 1;
+    const thead = document.getElementById('comparison-table-head');
+    const tbody = document.getElementById('comparison-table-body');
+    if (!thead || !tbody) return;
 
-    // Update raw value text
-    rawEl.innerText = `${raw.toFixed(dec)}${cfg.unit}`;
+    if (selectedNodes.length === 0) {
+        thead.innerHTML = '';
+        tbody.innerHTML = '<tr><td class="py-4 text-center text-light-gray" colspan="5">No nodes selected for comparison</td></tr>';
+        return;
+    }
 
-    // Safe range check — color raw value red if outside safe band
-    const outsideSafe = raw < cfg.safeMin || raw > cfg.safeMax;
-    rawEl.style.color = outsideSafe ? 'var(--red)' : 'var(--text-primary)';
-    if (rangeFlagEl) {
-        if (outsideSafe) {
-            rangeFlagEl.innerText = '⚠ UNSAFE';
-            rangeFlagEl.style.color = 'var(--red)';
-            appendTerminal(`[ALERT] ${cfg.name} reading (${raw.toFixed(dec)}${cfg.unit}) outside safe range (${cfg.safeMin}-${cfg.safeMax}${cfg.unit}).`, 'warn');
+    // Build Table Header dynamically
+    let headerHTML = '<tr class="text-light-gray border-b border-[var(--border-color)]"><th class="py-2">Parameter</th>';
+    selectedNodes.forEach(nodeId => {
+        const node = state.nodes[nodeId];
+        headerHTML += `<th class="py-2">${node ? node.name : nodeId}</th>`;
+    });
+    headerHTML += '<th class="py-2">Variance</th><th class="py-2">Status</th></tr>';
+    thead.innerHTML = headerHTML;
+
+    // Build Table Body dynamically
+    const params = ['tds', 'ph', 'temp', 'turb'];
+    const paramNames = { tds: 'Total Dissolved Solids (TDS)', ph: 'Acidity Level (pH)', temp: 'Water Temperature', turb: 'Turbidity Clarity' };
+    let tbodyHTML = '';
+
+    params.forEach(p => {
+        const unit = SENSOR_CONFIGS[p].unit;
+        const fixed = p === 'ph' ? 2 : p === 'turb' ? 1 : 0;
+        
+        let rowHTML = `<tr><td class="py-3 font-semibold text-[var(--text-primary)]">${paramNames[p]}</td>`;
+        
+        let minVal = Infinity;
+        let maxVal = -Infinity;
+
+        selectedNodes.forEach(nodeId => {
+            const hist = state.history[nodeId] && state.history[nodeId][p];
+            const val = hist ? (hist.slice(-1)[0] || 0) : 0;
+            if (val < minVal) minVal = val;
+            if (val > maxVal) maxVal = val;
+            
+            const colorClass = p === 'ph' ? 'text-soft-green' : 'text-cyan-accent';
+            rowHTML += `<td class="py-3 font-mono ${colorClass}">${val.toFixed(fixed)}${unit}</td>`;
+        });
+
+        const delta = maxVal - minVal;
+        rowHTML += `<td class="py-3 font-mono font-bold">${delta.toFixed(fixed)}${unit}</td>`;
+
+        // Highlight logic based on divergence
+        const isNegativeAlert = (p === 'ph' && delta > 1.0) || (p !== 'ph' && delta > (SENSOR_CONFIGS[p].max * 0.15));
+        if (selectedNodes.length < 2) {
+            rowHTML += `<td class="py-3"><span class="text-light-gray font-semibold">N/A</span></td>`;
+        } else if (isNegativeAlert) {
+            rowHTML += `<td class="py-3"><span class="text-magenta-accent font-semibold"><i class="fa-solid fa-triangle-exclamation"></i> High Variance</span></td>`;
         } else {
-            rangeFlagEl.innerText = '✓ OK';
-            rangeFlagEl.style.color = 'var(--green)';
+            rowHTML += `<td class="py-3"><span class="text-soft-green font-semibold"><i class="fa-solid fa-circle-check"></i> Consistent</span></td>`;
+        }
+
+        rowHTML += '</tr>';
+        tbodyHTML += rowHTML;
+    });
+
+    tbody.innerHTML = tbodyHTML;
+
+    // Simple trend badge based on number of nodes
+    const badge = document.getElementById('overall-trend-badge');
+    if (badge) {
+        if (selectedNodes.length > 1) {
+            badge.innerText = 'Multi-Node Active';
+            badge.className = 'text-xs px-2 py-0.5 rounded bg-cyan-accent/20 text-cyan-accent font-extrabold uppercase tracking-wider';
+        } else {
+            badge.innerText = 'Single View';
+            badge.className = 'text-xs px-2 py-0.5 rounded bg-gray-600/20 text-gray-400 font-extrabold uppercase tracking-wider';
         }
     }
-
-    // Update filtered value text (Edge decisions)
-    filtEl.innerText = `${filtered.toFixed(dec)}${cfg.unit}`;
-    
-    // Update Trust numerical label & color fill
-    trustValEl.innerText = `${trust}%`;
-    trustBarEl.style.width = `${trust}%`;
-    
-    // Update dynamic classes depending on status
-    if (id === 'turb' && typeof weatherContext !== 'undefined' && weatherContext === 'rain' && (status === 'suspect' || status === 'degraded')) {
-        cardEl.className = `sensor-card ${status} rain-mitigated`;
-    } else {
-        cardEl.className = `sensor-card ${status}`;
-    }
-    
-    if (trust === 0) {
-        badgeEl.innerText = 'OFFLINE / FAULT';
-        badgeEl.className = 'sensor-badge degraded';
-    } else {
-        badgeEl.innerText = status === 'degraded' ? 'Degraded/Faulty' : status;
-        badgeEl.className = `sensor-badge ${status}`;
-    }
-
-    // Color gradient shifts on trust score
-    if (trust >= 80) {
-        trustBarEl.style.backgroundColor = 'var(--green)';
-    } else if (trust >= 50) {
-        trustBarEl.style.backgroundColor = 'var(--amber)';
-    } else {
-        trustBarEl.style.backgroundColor = 'var(--red)';
-    }
 }
 
-function spawnDataPacket(containerId, packetClass) {
-    const container = document.getElementById(containerId);
-    if (!container) return;
+// Analytics large chart rendering
+let analyticsChartInstance = null;
 
-    const packet = document.createElement('div');
-    packet.className = `packet ${packetClass}-packet`;
-    container.appendChild(packet);
-
-    // Remove packet after animation ends
-    setTimeout(() => {
-        packet.remove();
-    }, 1500);
-}
-
-function appendTerminal(msg, type) {
-    const term = document.getElementById('edge-terminal');
-    const line = document.createElement('div');
-    const time = new Date().toLocaleTimeString();
+function initAnalyticsPageChart() {
+    const canvas = document.getElementById('analyticsChart');
+    if (!canvas) return;
     
-    // Style specific output parts
-    let styledMsg = msg;
-    if (type === 'warn') {
-        line.className = 'terminal-line warn-line';
-        styledMsg = msg.replace(/(\b\d+\.?\d*%\b|\b\w+ degraded\b)/g, '<span class="action-val">$1</span>');
-    } else if (type === 'error') {
-        line.className = 'terminal-line error-line';
-        styledMsg = msg.replace(/(DECOUPLING|CRITICAL|stuck|\b\d+\.?\d*%\b)/g, '<span class="action-val">$1</span>');
-    } else if (type === 'info') {
-        line.className = 'terminal-line info-line';
-        styledMsg = msg.replace(/(\b\d+\.?\d*°C\b|\b\d+\.?\d*mm\/s\b|\b\d+\.?\d*kPa\b|\b\d+\.?\d*V\b|passed|upload|RESTORED)/gi, '<span class="action-val">$1</span>');
-    } else {
-        line.className = 'terminal-line system-line';
-    }
-
-    line.innerHTML = `[${time}] ${styledMsg}`;
-    term.appendChild(line);
-    
-    // Cap at 50 lines to prevent infinite stretch
-    if (term.childElementCount > 50) {
-        term.removeChild(term.firstChild);
-    }
-    
-    // Auto-scroll to bottom
-    term.scrollTop = term.scrollHeight;
-}
-
-function updateEdgeQueueDOM() {
-    const body = document.getElementById('edge-queue-body');
-    if (localQueue.length === 0) {
-        body.innerHTML = '<tr><td colspan="4" class="empty-placeholder">Queue empty. Edge transmitting directly to Cloud.</td></tr>';
-        return;
-    }
-
-    // Show only the 10 newest items in the buffer for visual rendering efficiency
-    let rowsHtml = '';
-    const slice = localQueue.slice(-10).reverse();
-    slice.forEach(pkt => {
-        const statusBadge = `<span class="sensor-badge ${pkt.status}">${pkt.status}</span>`;
-        rowsHtml += `
-            <tr>
-                <td>${pkt.timestamp}</td>
-                <td>${pkt.sensorName}</td>
-                <td>${pkt.filteredVal.toFixed(2)}${pkt.unit}</td>
-                <td>${statusBadge}</td>
-            </tr>
-        `;
-    });
-    body.innerHTML = rowsHtml;
-}
-
-function updateCloudDbDOM() {
-    const body = document.getElementById('cloud-db-body');
-    if (cloudDb.length === 0) {
-        body.innerHTML = '<tr><td colspan="4" class="empty-placeholder">No cloud telemetry logged yet.</td></tr>';
-        return;
-    }
-
-    // Show only the 10 newest entries in the Cloud DB
-    let rowsHtml = '';
-    const slice = cloudDb.slice(0, 10);
-    slice.forEach(pkt => {
-        rowsHtml += `
-            <tr>
-                <td>${pkt.timestamp}</td>
-                <td>${pkt.sensorName}</td>
-                <td>${pkt.filteredVal.toFixed(2)}${pkt.unit}</td>
-                <td style="font-family:var(--font-mono); font-weight:700;" class="${pkt.trust < 50 ? 'text-red' : pkt.trust < 80 ? 'text-amber' : 'text-green'}">${pkt.trust}%</td>
-            </tr>
-        `;
-    });
-    body.innerHTML = rowsHtml;
-}
-
-// --- CHART MANAGEMENT ---
-let chartLabels = [];
-let chartDataSets = { tds: [], ph: [], temp: [], turb: [] };
-
-function initChart() {
-    const ctx = document.getElementById('trustChart').getContext('2d');
-    
-    // Seed labels (30 seconds) with 100% initial trust
-    for (let i = historyLength; i > 0; i--) {
-        chartLabels.push(`-${i}s`);
-        chartDataSets.tds.push(100);
-        chartDataSets.ph.push(100);
-        chartDataSets.temp.push(100);
-        chartDataSets.turb.push(100);
-    }
-    chartLabels.push('Now');
-
-    trustChartInstance = new Chart(ctx, {
+    analyticsChartInstance = new Chart(canvas.getContext('2d'), {
         type: 'line',
         data: {
-            labels: chartLabels,
-            datasets: [
-                {
-                    label: 'TDS (ppm)',
-                    borderColor: 'hsl(217, 91%, 60%)',
-                    backgroundColor: 'rgba(59, 130, 246, 0.06)',
-                    borderWidth: 2,
-                    pointRadius: 0,
-                    tension: 0.3,
-                    data: chartDataSets.tds
-                },
-                {
-                    label: 'pH',
-                    borderColor: 'hsl(152, 76%, 50%)',
-                    backgroundColor: 'rgba(16, 185, 129, 0.06)',
-                    borderWidth: 2,
-                    pointRadius: 0,
-                    tension: 0.3,
-                    data: chartDataSets.ph
-                },
-                {
-                    label: 'Temperature (°C)',
-                    borderColor: 'hsl(37, 98%, 53%)',
-                    backgroundColor: 'rgba(245, 158, 11, 0.06)',
-                    borderWidth: 2,
-                    pointRadius: 0,
-                    tension: 0.3,
-                    data: chartDataSets.temp
-                },
-                {
-                    label: 'Turbidity (NTU)',
-                    borderColor: 'hsl(280, 85%, 60%)',
-                    backgroundColor: 'rgba(168, 85, 247, 0.06)',
-                    borderWidth: 2,
-                    pointRadius: 0,
-                    tension: 0.3,
-                    data: chartDataSets.turb
-                }
-            ]
+            labels: Array.from({length: historyLength}, (_, i) => `-${(historyLength-i)*2}s`),
+            datasets: []
         },
         options: {
             responsive: true,
             maintainAspectRatio: false,
-            plugins: {
-                legend: { display: false } // Custom legend in HTML
-            },
+            interaction: { intersect: false, mode: 'index' },
             scales: {
-                x: {
-                    grid: { color: 'rgba(255, 255, 255, 0.03)' },
-                    ticks: { color: 'hsl(215, 16%, 47%)', font: { size: 9 } }
-                },
-                y: {
-                    min: 0,
-                    max: 105,
-                    grid: { color: 'rgba(255, 255, 255, 0.03)' },
-                    ticks: { color: 'hsl(215, 16%, 47%)', font: { size: 9, family: 'Fira Code' } }
+                x: { grid: { color: 'rgba(255,255,255,0.03)' }, ticks: { color: '#9ca3af', font: { size: 9 } } },
+                y: { grid: { color: 'rgba(255,255,255,0.03)' }, ticks: { color: '#9ca3af', font: { size: 9 } } }
+            },
+            plugins: {
+                legend: {
+                    display: true,
+                    labels: { color: '#9ca3af', font: { size: 10 } }
                 }
             }
         }
     });
+}
 
-    // Theme toggle
-    const root = document.documentElement;
-    const themeToggle = document.getElementById("themeToggle");
-    const savedTheme = localStorage.getItem("gangaedge-theme") || "dark";
-    root.dataset.theme = savedTheme;
-    if(themeToggle) {
-        themeToggle.innerHTML = savedTheme === "dark" ? '<i class="fa-solid fa-sun"></i>' : '<i class="fa-solid fa-moon"></i>';
-        themeToggle.addEventListener("click", () => {
-            const nextTheme = root.dataset.theme === "dark" ? "light" : "dark";
-            root.dataset.theme = nextTheme;
-            localStorage.setItem("gangaedge-theme", nextTheme);
-            themeToggle.innerHTML = nextTheme === "dark" ? '<i class="fa-solid fa-sun"></i>' : '<i class="fa-solid fa-moon"></i>';
+function updateAnalyticsPage() {
+    if (!analyticsChartInstance) return;
+
+    const metric = document.getElementById('analytics-metric-select').value;
+    const compareAll = document.getElementById('analytics-compare-nodes').checked;
+    const selectedNodeId = document.getElementById('analytics-node-select').value;
+
+    const labels = Array.from({length: historyLength}, (_, i) => `-${(historyLength-i)*2}s`);
+    analyticsChartInstance.data.labels = labels;
+
+    // Reset datasets
+    analyticsChartInstance.data.datasets = [];
+
+    const colors = {
+        'node-a': '#3b82f6',
+        'node-b': '#10b981',
+        'node-c': '#60a5fa',
+        'node-d': '#3b82f6',
+        'tds': '#3b82f6',
+        'ph': '#10b981',
+        'temp': '#f59e0b',
+        'turb': '#60a5fa'
+    };
+
+    if (compareAll) {
+        // Compare one metric across all 4 nodes
+        Object.keys(state.nodes).forEach(nodeId => {
+            const node = state.nodes[nodeId];
+            if (node.status === 'offline') return;
+
+            let dataPath = [];
+            let labelSuffix = '';
+            if (metric === 'trust') {
+                // Plot average trust score of all sensors
+                for (let i = 0; i < historyLength; i++) {
+                    let total = 0;
+                    const sensors = ['tds', 'ph', 'temp', 'turb'];
+                    sensors.forEach(s => {
+                        const arr = state.history[nodeId][`trust_${s}`];
+                        total += arr[arr.length - historyLength + i] || 100;
+                    });
+                    dataPath.push(Math.round(total / 4));
+                }
+                labelSuffix = 'Avg Trust Score';
+            } else {
+                dataPath = state.history[nodeId][metric].slice(-historyLength);
+                labelSuffix = SENSOR_CONFIGS[metric].name;
+            }
+
+            analyticsChartInstance.data.datasets.push({
+                label: `${node.name} (${labelSuffix})`,
+                data: dataPath,
+                borderColor: colors[nodeId],
+                backgroundColor: colors[nodeId] + '05',
+                borderWidth: 2,
+                pointRadius: 0,
+                tension: 0.3,
+                fill: true
+            });
+        });
+    } else {
+        // Show all metrics of the SINGLE selected node
+        const node = state.nodes[selectedNodeId];
+        if (node.status === 'offline') {
+            analyticsChartInstance.update();
+            return;
+        }
+
+        if (metric === 'trust') {
+            // Plot trust scores of all 4 sensors
+            ['tds', 'ph', 'temp', 'turb'].forEach(s => {
+                const data = state.history[selectedNodeId][`trust_${s}`].slice(-historyLength);
+                analyticsChartInstance.data.datasets.push({
+                    label: `${SENSOR_CONFIGS[s].name} AI Trust`,
+                    data: data,
+                    borderColor: colors[s],
+                    backgroundColor: colors[s] + '05',
+                    borderWidth: 2.2,
+                    pointRadius: 0,
+                    tension: 0.35,
+                    fill: true
+                });
+            });
+        } else {
+            // Plot raw values + edge filtered values side-by-side or overlapped
+            const rawData = state.history[selectedNodeId][metric].slice(-historyLength);
+            const sims = state.simulators[selectedNodeId];
+            const filteredData = sims[metric].filteredHistory.slice(-historyLength);
+
+            analyticsChartInstance.data.datasets.push({
+                label: `${SENSOR_CONFIGS[metric].name} Raw Value`,
+                data: rawData,
+                borderColor: colors[metric],
+                backgroundColor: 'transparent',
+                borderWidth: 1.5,
+                borderDash: [5, 5],
+                pointRadius: 0,
+                tension: 0.2
+            });
+
+            analyticsChartInstance.data.datasets.push({
+                label: `${SENSOR_CONFIGS[metric].name} Edge Output`,
+                data: filteredData,
+                borderColor: colors[metric],
+                backgroundColor: colors[metric] + '08',
+                borderWidth: 2.5,
+                pointRadius: 0,
+                tension: 0.35,
+                fill: true
+            });
+        }
+    }
+
+    analyticsChartInstance.update('none');
+}
+
+// Nodes Directory Card builder
+function renderNodesDirectory() {
+    const grid = document.getElementById('nodes-directory-grid');
+    if (!grid) return;
+    grid.innerHTML = '';
+
+    const filter = document.getElementById('node-search-filter').value;
+
+    Object.keys(state.nodes).forEach(nodeId => {
+        const node = state.nodes[nodeId];
+        
+        // Filter criteria
+        if (filter === 'online' && node.status !== 'online') return;
+        if (filter === 'offline' && node.status !== 'offline') return;
+
+        const card = document.createElement('div');
+        card.className = `glass-card cursor-pointer group hover:scale-[1.01] flex flex-col justify-between border-l-4 ${node.status === 'online' ? 'border-l-soft-green' : 'border-l-gray-600'}`;
+        card.setAttribute('onclick', `selectAndJumpToTelemetry('${nodeId}')`);
+
+        // Compute average trust
+        let avgTrust = 0;
+        if (node.status === 'online') {
+            const scores = Object.values(node.trustScores);
+            avgTrust = Math.round(scores.reduce((a,b)=>a+b,0)/scores.length);
+        }
+
+        // Calculate active sensors status
+        let sensorsHtml = '';
+        node.sensors.forEach(s => {
+            const tScore = node.status === 'online' ? node.trustScores[s] : 0;
+            let dotColor = 'bg-gray-600';
+            if (node.status === 'online') {
+                dotColor = tScore >= 80 ? 'bg-soft-green' : tScore >= 50 ? 'bg-yellow-500' : 'bg-magenta-accent';
+            }
+            sensorsHtml += `
+                <div class="flex items-center justify-between text-[10px] my-1">
+                    <span class="text-light-gray"><i class="fa-solid ${SENSOR_CONFIGS[s].icon} mr-1"></i> ${SENSOR_CONFIGS[s].name}</span>
+                    <div class="flex items-center gap-1.5">
+                        <span class="w-1.5 h-1.5 rounded-full ${dotColor}"></span>
+                        <span class="font-bold text-white font-mono">${node.status === 'online' ? tScore + '%' : 'Offline'}</span>
+                    </div>
+                </div>
+            `;
+        });
+
+        // Compute active time
+        const activeMins = Math.round((Date.now() - node.uptimeStart) / 60000);
+        const uptimeStr = node.status === 'online' ? `${Math.floor(activeMins/60)}h ${activeMins%60}m` : 'Unreachable';
+
+        card.innerHTML = `
+            <div>
+                <div class="flex justify-between items-start mb-2">
+                    <div>
+                        <h4 class="font-bold text-white group-hover:text-cyan-accent transition-colors">${node.name}</h4>
+                        <span class="text-[9px] text-light-gray uppercase tracking-widest block mt-0.5">ID: ${node.deviceId} &bull; ${node.station}</span>
+                    </div>
+                    <span class="text-[9px] font-extrabold uppercase px-2 py-0.5 rounded ${node.status === 'online' ? 'bg-soft-green/20 text-soft-green' : 'bg-gray-600/20 text-gray-500'}">
+                        ${node.status.toUpperCase()}
+                    </span>
+                </div>
+
+                <div class="grid grid-cols-2 gap-2 my-4 pt-3 border-t border-gray-700/20">
+                    <div>
+                        <span class="text-[9px] text-light-gray block uppercase">Deployed</span>
+                        <span class="text-xs font-bold text-white">${node.installed}</span>
+                    </div>
+                    <div>
+                        <span class="text-[9px] text-light-gray block uppercase">Active Timer</span>
+                        <span class="text-xs font-bold text-cyan-accent">${uptimeStr}</span>
+                    </div>
+                </div>
+
+                <div class="pt-3 border-t border-gray-700/20">
+                    <span class="text-[9px] text-light-gray uppercase tracking-wider block mb-2">Sensors Pipeline</span>
+                    ${sensorsHtml}
+                </div>
+            </div>
+
+            <!-- Trust Circle Gauge footer -->
+            ${node.status === 'online' ? `
+            <div class="flex items-center justify-between mt-4 bg-navy-bg/30 p-2 rounded-lg border border-[var(--border-color)]">
+                <span class="text-[10px] text-light-gray font-bold">NODE TRUST SCORE</span>
+                <span class="font-mono font-extrabold text-sm ${avgTrust >= 80 ? 'text-soft-green' : avgTrust >= 50 ? 'text-yellow-500' : 'text-magenta-accent'}">${avgTrust}%</span>
+            </div>
+            ` : ''}
+        `;
+
+        grid.appendChild(card);
+    });
+}
+
+window.selectAndJumpToTelemetry = function(nodeId) {
+    state.selectedNode = nodeId;
+    // Check the corresponding checkbox if it exists
+    const cb = document.querySelector(`.telemetry-node-cb[value="${nodeId}"]`);
+    if (cb) cb.checked = true;
+    
+    // Trigger SPA Routing to Telemetry
+    const btn = document.querySelector('[data-page="view-sensors"]');
+    if (btn) btn.click();
+};
+
+// Add new node dynamically
+document.getElementById('add-node-btn').addEventListener('click', () => {
+    const letters = ['E', 'F', 'G', 'H'];
+    const idx = Object.keys(state.nodes).length - 4;
+    if (idx >= letters.length) {
+        logEvent('[ASSETS MANAGER] Maximum capacity reached! Deployment pool exhausted.', 'warn');
+        return;
+    }
+
+    const key = `node-${letters[idx].toLowerCase()}`;
+    const name = `Node ${letters[idx]}: Canal Branch`;
+    const deviceId = `EDGE-C-0${Math.floor(100+Math.random()*900)}`;
+    const installDate = new Date().toISOString().split('T')[0];
+
+    // Configure new Node state
+    NODES[key] = {
+        id: key,
+        name: name,
+        station: 'ROORKEE-BRANCH',
+        deviceId: deviceId,
+        installed: installDate,
+        uptimeStart: Date.now(),
+        status: 'online',
+        sensors: ['tds', 'ph', 'temp', 'turb'],
+        trustScores: { tds: 100, ph: 100, temp: 100, turb: 100 },
+        lastSeen: Date.now(),
+        rssi: -58
+    };
+
+    // Configure simulators & offset
+    NODE_OFFSETS[key] = { tds: +10.0, ph: +0.05, temp: -0.3, turb: +5.0 };
+    initNodeState(key);
+
+    logEvent(`[ASSETS MANAGER] ✓ Successfully provisioned new asset card: ${name} (ID: ${deviceId})`, 'info');
+    renderNodesDirectory();
+    populateAllDropdowns();
+
+    // Add a new checkbox for the node in telemetry sidebar
+    const cbContainer = document.getElementById('telemetry-node-checkboxes');
+    if (cbContainer) {
+        const label = document.createElement('label');
+        label.className = 'flex items-center gap-2 text-sm text-[var(--text-primary)] cursor-pointer';
+        label.innerHTML = `<input type="checkbox" value="${key}" class="telemetry-node-cb rounded bg-navy-bg border-[var(--border-color)] text-cyan-accent focus:ring-0" checked> ${name}`;
+        cbContainer.appendChild(label);
+        // Bind change listener
+        label.querySelector('input').addEventListener('change', () => {
+            const checked = document.querySelectorAll('.telemetry-node-cb:checked');
+            if (checked.length > 0) state.selectedNode = checked[0].value;
+            renderSensorCards();
+            updateSensorsPage();
+        });
+    }
+});
+
+// --- SPA TAB SELECT ROUTING ENGINE ---
+function setupSPARoutes() {
+    const buttons = document.querySelectorAll('.nav-btn');
+    buttons.forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            
+            buttons.forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            
+            const targetPage = btn.getAttribute('data-page');
+            state.activePage = targetPage;
+            
+            document.querySelectorAll('.page-view').forEach(view => {
+                view.classList.add('hidden');
+            });
+            
+            const targetView = document.getElementById(targetPage);
+            if (targetView) targetView.classList.remove('hidden');
+
+            logEvent(`[SPA ROUTER] Navigated to ${btn.innerText} page.`, 'system');
+
+            // Force renders
+            if (targetPage === 'view-overview') {
+                updateOverviewPage();
+            } else if (targetPage === 'view-sensors') {
+                renderSensorCards();
+                updateSensorsPage();
+            } else if (targetPage === 'view-analytics') {
+                updateAnalyticsPage();
+            } else if (targetPage === 'view-nodes') {
+                renderNodesDirectory();
+            } else if (targetPage === 'view-console') {
+                renderFullConsoleLogs();
+            }
+        });
+    });
+}
+
+// --- SETUP EVENT EVENT LISTENERS ---
+function setupEventListeners() {
+    // Cloud Toggle Outage switch
+    const cloudToggle = document.getElementById('cloud-toggle');
+    if (cloudToggle) {
+        cloudToggle.addEventListener('change', (e) => {
+            state.isCloudOnline = e.target.checked;
+            const headerIcon = document.getElementById('cloud-icon-header');
+            
+            if (state.isCloudOnline) {
+                if (headerIcon) headerIcon.className = 'fa-solid fa-cloud-arrow-up text-cyan-accent';
+                logEvent('[UPLINK RESTORED] Cloud WebSocket connection established. Draining offline buffers...', 'info');
+                triggerBatchSync();
+            } else {
+                if (headerIcon) headerIcon.className = 'fa-solid fa-cloud-arrow-up text-magenta-accent animate-pulse';
+                logEvent('[NETWORK FAULT] Outage detected! Disconnected from cloud server. Buffering telemetry to SPIFFS queue...', 'error');
+                setSyncStatus('buffering');
+            }
         });
     }
 
-    // Uptime tracker
-    let uptimeSeconds = 0;
-    setInterval(() => {
-        uptimeSeconds++;
-        const h = String(Math.floor(uptimeSeconds / 3600)).padStart(2, "0");
-        const m = String(Math.floor((uptimeSeconds % 3600) / 60)).padStart(2, "0");
-        const s = String(uptimeSeconds % 60).padStart(2, "0");
-        const ut = document.getElementById("uptime");
-        if(ut) ut.textContent = `${h}:${m}:${s}`;
-    }, 1000);
-}
-
-function updateChart(tickData) {
-    if (!trustChartInstance) return;
-
-    // Shift data into rolling window per sensor ID
-    tickData.forEach(d => {
-        if (chartDataSets[d.id] !== undefined) {
-            chartDataSets[d.id].push(d.trust);
-            if (chartDataSets[d.id].length > historyLength + 1) {
-                chartDataSets[d.id].shift();
+    // Telemetry Page Node Select checkboxes
+    const nodeCheckboxes = document.querySelectorAll('.telemetry-node-cb');
+    nodeCheckboxes.forEach(cb => {
+        cb.addEventListener('change', () => {
+            const checked = document.querySelectorAll('.telemetry-node-cb:checked');
+            if (checked.length > 0) {
+                state.selectedNode = checked[0].value;
             }
-        }
+            logEvent(`[TELEMETRY] Selection updated`, 'system');
+            renderSensorCards();
+            updateSensorsPage();
+        });
     });
 
-    // Update dataset references to match new sensor IDs
-    trustChartInstance.data.datasets[0].data = chartDataSets.tds;
-    trustChartInstance.data.datasets[1].data = chartDataSets.ph;
-    trustChartInstance.data.datasets[2].data = chartDataSets.temp;
-    trustChartInstance.data.datasets[3].data = chartDataSets.turb;
-    
-    trustChartInstance.update('none'); // silent update without reset transitions
+    // Comparison view toggle
+    const compareToggle = document.getElementById('compare-nodes-toggle');
+    const compContainer = document.getElementById('comparison-view-container');
+    if (compareToggle) {
+        compareToggle.addEventListener('change', (e) => {
+            state.comparisonEnabled = e.target.checked;
+            if (state.comparisonEnabled) {
+                if (compContainer) compContainer.classList.remove('hidden');
+                updateComparisonTable();
+            } else {
+                if (compContainer) compContainer.classList.add('hidden');
+            }
+        });
+    }
+
+    // Console filters
+    document.getElementById('filter-all').addEventListener('click', (e) => setLogFilter('all', e.target));
+    document.getElementById('filter-info').addEventListener('click', (e) => setLogFilter('info', e.target));
+    document.getElementById('filter-warn').addEventListener('click', (e) => setLogFilter('warn', e.target));
+    document.getElementById('filter-error').addEventListener('click', (e) => setLogFilter('error', e.target));
+
+    // Console Action buttons
+    document.getElementById('clear-console-btn').addEventListener('click', () => {
+        const mainTerm = document.getElementById('main-terminal');
+        if (mainTerm) mainTerm.innerHTML = '<div class="log-system">[TERMINAL REINITIALIZED]</div>';
+        state.logs = [];
+    });
+
+    const pauseBtn = document.getElementById('pause-stream-btn');
+    if (pauseBtn) {
+        pauseBtn.addEventListener('click', () => {
+            state.logPaused = !state.logPaused;
+            pauseBtn.innerHTML = state.logPaused ? '<i class="fa-solid fa-play mr-1.5"></i>Resume' : '<i class="fa-solid fa-pause mr-1.5"></i>Pause';
+            if (!state.logPaused) renderFullConsoleLogs();
+        });
+    }
+
+    // Export console logs to file
+    document.getElementById('export-log-btn').addEventListener('click', () => {
+        const text = state.logs.map(log => `[${log.time}] [${log.type.toUpperCase()}] ${log.msg}`).join('\n');
+        const blob = new Blob([text], { type: 'text/plain' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `gangaedge_audit_log_${Date.now()}.txt`;
+        a.click();
+        logEvent('[AUDIT EXPORT] Telemetry diagnostic logs exported to diagnostic file.', 'system');
+    });
+
+    // Theme Switch toggle
+    const themeBtn = document.getElementById('theme-toggle');
+    if (themeBtn) {
+        themeBtn.addEventListener('click', () => {
+            const html = document.documentElement;
+            if (html.classList.contains('dark')) {
+                html.classList.remove('dark');
+                html.classList.add('light');
+                localStorage.setItem('theme', 'light');
+                logEvent('[THEME SWITCH] Loaded Light palette.', 'system');
+            } else {
+                html.classList.remove('light');
+                html.classList.add('dark');
+                localStorage.setItem('theme', 'dark');
+                logEvent('[THEME SWITCH] Loaded Dark palette.', 'system');
+            }
+            updateChartThemes();
+        });
+    }
+
+    // Analytics dropdown listeners
+    document.getElementById('analytics-node-select').addEventListener('change', () => updateAnalyticsPage());
+    document.getElementById('analytics-metric-select').addEventListener('change', () => updateAnalyticsPage());
+    document.getElementById('analytics-compare-nodes').addEventListener('change', () => updateAnalyticsPage());
+
+    // Directory Node search/filter
+    document.getElementById('node-search-filter').addEventListener('change', () => renderNodesDirectory());
 }
 
-// Start app
+function setLogFilter(filter, button) {
+    state.logFilter = filter;
+    
+    // Switch active button colors
+    const btns = button.parentNode.querySelectorAll('button');
+    btns.forEach(b => {
+        b.className = 'px-3 py-1 font-bold rounded-md text-light-gray';
+    });
+    button.className = 'px-3 py-1 font-bold rounded-md bg-cyan-accent text-slate-900';
+
+    logEvent(`[CONSOLE] Log filters shifted to: ${filter.toUpperCase()}`, 'system');
+    renderFullConsoleLogs();
+}
+
+function updateChartThemes() {
+    const isLight = document.documentElement.classList.contains('light');
+    const labelColor = isLight ? '#64748b' : '#64748b';
+    const gridColor = isLight ? 'rgba(148, 163, 184, 0.15)' : 'rgba(6, 182, 212, 0.06)';
+
+    // Update Overview mini charts styling
+    Object.values(miniChartInstances).forEach(c => {
+        c.options.scales.y.grid.color = gridColor;
+        c.options.scales.y.ticks.color = labelColor;
+        c.update('none');
+    });
+
+    // Update Analytics Chart styling
+    if (analyticsChartInstance) {
+        analyticsChartInstance.options.scales.x.grid.color = gridColor;
+        analyticsChartInstance.options.scales.y.grid.color = gridColor;
+        analyticsChartInstance.options.scales.x.ticks.color = labelColor;
+        analyticsChartInstance.options.scales.y.ticks.color = labelColor;
+        analyticsChartInstance.options.plugins.legend.labels.color = labelColor;
+        analyticsChartInstance.update('none');
+    }
+}
+
+function populateAllDropdowns() {
+    // Populate drop downs from state (excluding telemetry which uses checkboxes now)
+    const selects = [
+        'node-select-tds', 'node-select-ph', 'node-select-temp', 'node-select-turb',
+        'analytics-node-select'
+    ];
+
+    selects.forEach(id => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        
+        // save current selection
+        const val = el.value;
+        el.innerHTML = '';
+
+        Object.keys(state.nodes).forEach(key => {
+            const opt = document.createElement('option');
+            opt.value = key;
+            opt.innerText = state.nodes[key].name;
+            el.appendChild(opt);
+        });
+
+        if (val && state.nodes[val]) el.value = val;
+    });
+}
+
+function initNodeState(nodeId) {
+    state.simulators[nodeId] = {};
+    state.history[nodeId] = {
+        tds: [], ph: [], temp: [], turb: [],
+        trust_tds: [], trust_ph: [], trust_temp: [], trust_turb: []
+    };
+
+    // Pre-seed simulator histories (30 entries)
+    Object.keys(SENSOR_CONFIGS).forEach(s => {
+        const offset = NODE_OFFSETS[nodeId][s] || 0;
+        state.simulators[nodeId][s] = new SensorSimulator(SENSOR_CONFIGS[s], offset);
+        
+        // Seed arrays
+        for (let i = 0; i < historyLength; i++) {
+            const raw = state.simulators[nodeId][s].generateValue();
+            state.history[nodeId][s].push(raw);
+            state.history[nodeId][`trust_${s}`].push(100);
+            state.simulators[nodeId][s].filteredHistory.push(raw);
+        }
+    });
+}
+
+// --- INITIALIZATION ---
+function init() {
+    // 1. Pre-seed nodes state
+    Object.keys(state.nodes).forEach(nodeId => {
+        initNodeState(nodeId);
+    });
+
+    // 2. Setup SPA routes and event UI handlers
+    setupSPARoutes();
+    setupEventListeners();
+
+    // 3. Populate dropdown options
+    populateAllDropdowns();
+
+    // 4. Initialize charts
+    initOverviewCharts();
+    initAnalyticsPageChart();
+    
+    // Fetch historical telemetry from Google Sheets database
+    fetchGoogleSheetsHistory();
+    
+    // 5. Sync checks
+    updateStatsDOM();
+    setSyncStatus('idle');
+
+    // 6. Large Terminal log pre-seed
+    logEvent('[SYSTEM INIT] GangaEdge commands center running.', 'system');
+    logEvent('[SYSTEM INIT] ESP32-WROOM-32E nodes listening status active.', 'system');
+    logEvent('[SYSTEM INIT] One-Class SVM TinyML anomaly core calibration nominal.', 'system');
+    logEvent('[WEATHER SERVICE] Listening to Roorkee Canal station updates.', 'system');
+
+    // 7. Live Weather fetch
+    fetchWeather();
+    setInterval(fetchWeather, 300000); // 5 minutes polling
+
+    // 8. Start telemetry loop
+    setInterval(runSimulatedTick, 1500); // Fast 1.5s refresh for visual dashboard performance
+
+    // 9. HiveMQ broker WebSocket Connection
+    if (LIVE_MODE) {
+        connectLiveMQTT();
+    }
+    
+    // Load local stored theme preference
+    if (localStorage.getItem('theme') === 'light') {
+        document.documentElement.classList.remove('dark');
+        document.documentElement.classList.add('light');
+        updateChartThemes();
+    }
+}
+
+// Bootstrapper
 window.addEventListener('DOMContentLoaded', init);

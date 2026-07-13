@@ -33,7 +33,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 //  NODE CONFIGURATION
 // ─────────────────────────────────────────────────────────────────────────────
-//#define NODE_A  // Comment out this line to compile for Node B (Downstream)
+#define NODE_A  // Comment out this line to compile for Node B (Downstream)
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  USER CONFIGURATION  ←  Edit these before flashing
@@ -69,11 +69,11 @@ const char* G_SHEETS_WEBHOOK = "https://script.google.com/macros/s/AKfycbzD4xEIK
 // ─────────────────────────────────────────────────────────────────────────────
 //  PIN DEFINITIONS  (from your existing prototype)
 // ─────────────────────────────────────────────────────────────────────────────
-#define TDS_PIN        34
-#define PH_PIN         35
-#define TURB_OUT_PIN   33
-#define TURB_PWM_PIN   27
-#define TEMP_PIN       32
+#define TDS_PIN        39
+#define PH_PIN         34
+#define TURB_OUT_PIN   35
+#define TURB_PWM_PIN   18
+#define TEMP_PIN       26
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  TRUST SCORING CONFIGURATION

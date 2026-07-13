@@ -174,3 +174,45 @@ function doPost(e) {
       .setMimeType(ContentService.MimeType.JSON);
   }
 }
+
+// ─── GET handler for Dashboard History retrieval ──────────────────────────────
+function doGet(e) {
+  try {
+    var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+    var lastRow = sheet.getLastRow();
+    
+    if (lastRow <= 1) {
+      return ContentService
+        .createTextOutput(JSON.stringify([]))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+    
+    // Read the headers (Row 1)
+    var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    
+    // Read last 100 rows to prevent execution timeout / high payload size
+    var limit = 100;
+    var startRow = Math.max(2, lastRow - limit + 1);
+    var numRows = lastRow - startRow + 1;
+    
+    var data = sheet.getRange(startRow, 1, numRows, sheet.getLastColumn()).getValues();
+    var records = [];
+    
+    for (var i = 0; i < data.length; i++) {
+      var rowObj = {};
+      for (var j = 0; j < headers.length; j++) {
+        rowObj[headers[j]] = data[i][j];
+      }
+      records.push(rowObj);
+    }
+    
+    return ContentService
+      .createTextOutput(JSON.stringify(records))
+      .setMimeType(ContentService.MimeType.JSON);
+      
+  } catch (error) {
+    return ContentService
+      .createTextOutput(JSON.stringify({ status: "error", message: error.toString() }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}
