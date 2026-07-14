@@ -1816,13 +1816,20 @@ function setLogFilter(filter, button) {
 
 function updateChartThemes() {
     const isLight = document.documentElement.classList.contains('light');
-    const labelColor = isLight ? '#64748b' : '#64748b';
-    const gridColor = isLight ? 'rgba(148, 163, 184, 0.15)' : 'rgba(6, 182, 212, 0.06)';
+    const labelColor = isLight ? '#475569' : '#64748b';
+    const gridColor = isLight ? 'rgba(148, 163, 184, 0.18)' : 'rgba(6, 182, 212, 0.06)';
+    const chartBg = isLight ? 'rgba(255,255,255,0)' : 'rgba(0,0,0,0)';
+
+    const miniChartOpts = {
+        gridColor,
+        tickColor: labelColor,
+        bgColor: chartBg
+    };
 
     // Update Overview mini charts styling
     Object.values(miniChartInstances).forEach(c => {
-        c.options.scales.y.grid.color = gridColor;
-        c.options.scales.y.ticks.color = labelColor;
+        c.options.scales.y.grid.color = miniChartOpts.gridColor;
+        c.options.scales.y.ticks.color = miniChartOpts.tickColor;
         c.update('none');
     });
 
@@ -1836,6 +1843,7 @@ function updateChartThemes() {
         analyticsChartInstance.update('none');
     }
 }
+
 
 function populateAllDropdowns() {
     // Populate drop downs from state (excluding telemetry which uses checkboxes now)
