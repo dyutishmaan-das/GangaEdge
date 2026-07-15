@@ -1597,20 +1597,30 @@ window.deleteNode = function(nodeId) {
 
 // Add new node dynamically
 document.getElementById('add-node-btn').addEventListener('click', () => {
-    const letters = ['E', 'F', 'G', 'H'];
-    const idx = Object.keys(state.nodes).length - 4;
-    if (idx >= letters.length) {
+    const letters = ['E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z'];
+    let nextLetter = null;
+    
+    // Find the first letter that doesn't have an active node in the state
+    for (let l of letters) {
+        const potentialKey = `node-${l.toLowerCase()}`;
+        if (!state.nodes[potentialKey]) {
+            nextLetter = l;
+            break;
+        }
+    }
+
+    if (!nextLetter) {
         logEvent('[ASSETS MANAGER] Maximum capacity reached! Deployment pool exhausted.', 'warn');
         return;
     }
 
-    const key = `node-${letters[idx].toLowerCase()}`;
-    const name = `Node ${letters[idx]}: Canal Branch`;
+    const key = `node-${nextLetter.toLowerCase()}`;
+    const name = `Node ${nextLetter}: Canal Branch`;
     const deviceId = `EDGE-C-0${Math.floor(100+Math.random()*900)}`;
     const installDate = new Date().toISOString().split('T')[0];
 
-    // Configure new Node state
-    NODES[key] = {
+    // Configure new Node state directly on state.nodes
+    state.nodes[key] = {
         id: key,
         name: name,
         station: 'ROORKEE-BRANCH',
@@ -1624,8 +1634,15 @@ document.getElementById('add-node-btn').addEventListener('click', () => {
         rssi: -58
     };
 
+    // Keep global NODES synced
+    if (typeof NODES !== 'undefined') {
+        NODES[key] = state.nodes[key];
+    }
+
     // Configure simulators & offset
-    NODE_OFFSETS[key] = { tds: +10.0, ph: +0.05, temp: -0.3, turb: +5.0 };
+    if (typeof NODE_OFFSETS !== 'undefined') {
+        NODE_OFFSETS[key] = { tds: +10.0, ph: +0.05, temp: -0.3, turb: +5.0 };
+    }
     initNodeState(key);
 
     logEvent(`[ASSETS MANAGER] ✓ Successfully provisioned new asset card: ${name} (ID: ${deviceId})`, 'info');
