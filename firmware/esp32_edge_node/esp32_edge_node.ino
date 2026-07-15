@@ -33,7 +33,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 //  NODE CONFIGURATION
 // ─────────────────────────────────────────────────────────────────────────────
-#define NODE_A  // Comment out this line to compile for Node B (Downstream)
+//#define NODE_A  // Comment out this line to compile for Node B (Downstream)
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  USER CONFIGURATION  ←  Edit these before flashing
